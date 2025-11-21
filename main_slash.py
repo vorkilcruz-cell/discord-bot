@@ -9,6 +9,8 @@ import yt_dlp as youtube_dl
 import os
 from datetime import datetime, timedelta
 import json
+import subprocess
+import re
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -19,6 +21,7 @@ intents.guilds = True
 class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix='/', intents=intents)
+        self.last_logs = []
         
     async def setup_hook(self):
         await self.tree.sync()
@@ -33,13 +36,35 @@ if not DISCORD_TOKEN:
 translator = Translator()
 
 CURSE_WORDS = ['fuck', 'shit', 'damn', 'bitch', 'ass', 'bastard', 'crap', 'hell']
-
 BEYBLADE_FILE = 'beyblade_data.json'
+
+FUN_FACTS = [
+    "Honey never spoils. Archaeologists have found 3000-year-old honey in Egyptian tombs that was still edible!",
+    "A group of flamingos is called a 'flamboyance'.",
+    "Octopuses have three hearts - two pump blood to the gills, one pumps it to the rest of the body.",
+    "Bananas are berries, but strawberries aren't!",
+    "A single bolt of lightning contains enough energy to toast 100,000 slices of bread.",
+    "The fingerprints of koalas are so similar to humans, they could confuse crime scene investigators!",
+    "Dolphins have names for each other.",
+    "A group of crows is called a 'murder'.",
+    "Scotland's national animal is a unicorn.",
+    "Wombat poop is cubic shaped to prevent it from rolling away.",
+    "Cleopatra lived closer to the moon landing than to the building of the Great Pyramid.",
+    "Sloths only defecate once a week.",
+    "A group of pugs is called a 'grumble'.",
+    "The smell of fresh-cut grass is actually a plant's distress call.",
+    "Cats have a third eyelid called the nictitating membrane.",
+    "A shrimp's heart is in its head.",
+    "Squirrels can't taste sweetness.",
+    "The Eiffel Tower grows about 6 inches taller in the summer due to thermal expansion.",
+    "Penguins have knees - they're just hidden under their feathers!",
+    "A group of jellyfish is called a 'bloom' or 'swarm'.",
+]
 
 youtube_dl.utils.bug_reports_message = lambda: ''
 
 ytdl_format_options = {
-    'format': 'bestaudio/best',
+    'format': 'bestaudio[ext=m4a]/bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': True,
@@ -50,7 +75,9 @@ ytdl_format_options = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
-    'extract_flat': False
+    'socket_timeout': 30,
+    'http_chunk_size': 1024,
+    'trim_file_name': 100,
 }
 
 ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
@@ -59,13 +86,22 @@ class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, data, volume=0.5):
         super().__init__(source, volume)
         self.data = data
-        self.title = data.get('title')
-        self.url = data.get('url')
+        self.title = data.get('title', 'Unknown')
+        self.url = data.get('url', '')
+        self.duration = data.get('duration', 0)
 
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
         loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        try:
+            data = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream)),
+                timeout=30.0
+            )
+        except asyncio.TimeoutError:
+            raise Exception("Timeout extracting video information. Please try again.")
+        except Exception as e:
+            raise Exception(f"Failed to extract video: {str(e)}")
 
         if data and 'entries' in data:
             data = data['entries'][0]
@@ -76,11 +112,14 @@ class YTDLSource(discord.PCMVolumeTransformer):
         filename = data['url'] if stream else ytdl.prepare_filename(data)
         
         ffmpeg_options = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-            'options': '-vn -af loudnorm'
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
+            'options': '-vn -bufsize 64k'
         }
         
-        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+        try:
+            return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+        except Exception as e:
+            raise Exception(f"FFmpeg error: {str(e)}")
 
 class MusicPlayer:
     def __init__(self):
@@ -88,6 +127,7 @@ class MusicPlayer:
         self.current = None
         self.loop = False
         self.voice_client = None
+        self.is_playing = False
 
 music_players = {}
 
@@ -124,11 +164,12 @@ BEYBLADES = {
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     print(f'Bot is in {len(bot.guilds)} guilds')
-    try:
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} command(s)")
-    except Exception as e:
-        print(f"Failed to sync commands: {e}")
+    await bot.change_presence(
+        activity=discord.Activity(
+            type=discord.ActivityType.watching,
+            name="for /commands | Music player ready"
+        )
+    )
 
 @bot.event
 async def on_message(message):
@@ -145,7 +186,6 @@ async def on_message(message):
             await message.channel.send("I don't have permission to timeout members.")
         except Exception as e:
             print(f"Error timing out member: {e}")
-            await message.channel.send(f"Failed to timeout user: {str(e)}")
     
     await bot.process_commands(message)
 
@@ -168,12 +208,12 @@ async def translate(interaction: discord.Interaction, target_lang: str, text: st
         await interaction.response.send_message(embed=embed)
     except Exception as e:
         await interaction.response.send_message(
-            f"Translation error: {str(e)}\n\nUse language codes like: en (English), es (Spanish), fr (French), de (German), ja (Japanese), ko (Korean), zh-cn (Chinese)",
+            f"Translation error: {str(e)}\n\nUse language codes like: en, es, fr, de, ja, ko, zh-cn",
             ephemeral=True
         )
 
 @bot.tree.command(name='robux', description='Generate fake robux as a joke!')
-@app_commands.describe(amount='Amount of robux to generate (optional)')
+@app_commands.describe(amount='Amount of robux (optional)')
 async def robux(interaction: discord.Interaction, amount: int = None):
     if amount is None:
         amount = random.randint(1, 1000000)
@@ -182,9 +222,7 @@ async def robux(interaction: discord.Interaction, amount: int = None):
         f"💰 Congratulations {interaction.user.mention}! You just earned {amount:,} ROBUX! (Just kidding, we're broke 😂)",
         f"🎉 JACKPOT! {amount:,} ROBUX added to your account! (In your dreams 💭)",
         f"⚡ SUPER RARE DROP! {amount:,} ROBUX! (Too bad it's not real 🤣)",
-        f"🌟 WOW! The Robux gods have blessed you with {amount:,} ROBUX! (Psych! 😜)",
-        f"🎊 LEGENDARY! You won {amount:,} ROBUX! (Now wake up ⏰)",
-        f"💎 ULTRA RARE! {amount:,} ROBUX deposited! (In an alternate universe 🌌)",
+        f"🌟 WOW! {amount:,} ROBUX! (Psych! 😜)",
     ]
     
     await interaction.response.send_message(random.choice(responses))
@@ -193,7 +231,7 @@ async def robux(interaction: discord.Interaction, amount: int = None):
 async def verse(interaction: discord.Interaction):
     await interaction.response.defer()
     try:
-        response = requests.get('https://labs.bible.org/api/?passage=random&type=json')
+        response = requests.get('https://labs.bible.org/api/?passage=random&type=json', timeout=10)
         if response.status_code == 200:
             verse_data = response.json()[0]
             
@@ -206,15 +244,19 @@ async def verse(interaction: discord.Interaction):
             
             await interaction.followup.send(embed=embed)
         else:
-            await interaction.followup.send("Couldn't fetch a Bible verse right now. Please try again later.")
+            await interaction.followup.send("Couldn't fetch a Bible verse. Please try again later.")
     except Exception as e:
-        await interaction.followup.send(f"Error fetching Bible verse: {str(e)}")
+        await interaction.followup.send(f"Error: {str(e)}")
 
-@bot.tree.command(name='play', description='Play music from YouTube')
-@app_commands.describe(url='YouTube URL to play')
+@bot.tree.command(name='play', description='Play music from YouTube or Google Drive')
+@app_commands.describe(url='YouTube URL or Google Drive link')
 async def play(interaction: discord.Interaction, url: str):
     if not interaction.user.voice:
-        await interaction.response.send_message("You need to be in a voice channel to use this command!", ephemeral=True)
+        await interaction.response.send_message("❌ You need to be in a voice channel!", ephemeral=True)
+        return
+    
+    if 'drive.google.com' in url or 'docs.google.com' in url:
+        await interaction.response.send_message("❌ Google Drive playback is not supported. Please use YouTube links.", ephemeral=True)
         return
     
     channel = interaction.user.voice.channel
@@ -232,8 +274,10 @@ async def play(interaction: discord.Interaction, url: str):
         elif player.voice_client.channel != channel:
             await player.voice_client.move_to(channel)
         
+        print(f"Attempting to play: {url}")
         source = await YTDLSource.from_url(url, loop=bot.loop, stream=True)
         player.current = source
+        player.is_playing = True
         
         if player.voice_client.is_playing():
             player.voice_client.stop()
@@ -241,19 +285,25 @@ async def play(interaction: discord.Interaction, url: str):
         def after_playing(error):
             if error:
                 print(f'Player error: {error}')
+            player.is_playing = False
             if player.loop and player.current:
-                player.voice_client.play(player.current, after=after_playing)
+                try:
+                    player.voice_client.play(player.current, after=after_playing)
+                    player.is_playing = True
+                except Exception as e:
+                    print(f"Error replaying: {e}")
         
         player.voice_client.play(source, after=after_playing)
         
-        await interaction.followup.send(f'🎵 Now playing: **{source.title}**')
+        await interaction.followup.send(f'🎵 **Now playing:** {source.title}')
     except Exception as e:
-        await interaction.followup.send(f"Error playing audio: {str(e)}")
+        print(f"Play error: {e}")
+        await interaction.followup.send(f"❌ Error playing audio: {str(e)[:200]}")
 
 @bot.tree.command(name='loop', description='Toggle loop for the current song')
 async def loop_command(interaction: discord.Interaction):
     if interaction.guild.id not in music_players:
-        await interaction.response.send_message("No music is playing!", ephemeral=True)
+        await interaction.response.send_message("❌ No music is playing!", ephemeral=True)
         return
     
     player = music_players[interaction.guild.id]
@@ -267,7 +317,7 @@ async def loop_command(interaction: discord.Interaction):
 @bot.tree.command(name='stop', description='Stop playing music')
 async def stop(interaction: discord.Interaction):
     if interaction.guild.id not in music_players:
-        await interaction.response.send_message("No music is playing!", ephemeral=True)
+        await interaction.response.send_message("❌ No music is playing!", ephemeral=True)
         return
     
     player = music_players[interaction.guild.id]
@@ -276,14 +326,15 @@ async def stop(interaction: discord.Interaction):
         player.voice_client.stop()
         player.loop = False
         player.current = None
-        await interaction.response.send_message("⏹️ Stopped playing music!")
+        player.is_playing = False
+        await interaction.response.send_message("⏹️ Stopped playing!")
     else:
-        await interaction.response.send_message("No music is currently playing!", ephemeral=True)
+        await interaction.response.send_message("❌ No music is playing!", ephemeral=True)
 
 @bot.tree.command(name='leave', description='Leave the voice channel')
 async def leave(interaction: discord.Interaction):
     if interaction.guild.id not in music_players:
-        await interaction.response.send_message("I'm not in a voice channel!", ephemeral=True)
+        await interaction.response.send_message("❌ I'm not in a voice channel!", ephemeral=True)
         return
     
     player = music_players[interaction.guild.id]
@@ -293,9 +344,56 @@ async def leave(interaction: discord.Interaction):
         player.voice_client = None
         player.current = None
         player.loop = False
+        player.is_playing = False
         await interaction.response.send_message("👋 Left the voice channel!")
     else:
-        await interaction.response.send_message("I'm not in a voice channel!", ephemeral=True)
+        await interaction.response.send_message("❌ I'm not in a voice channel!", ephemeral=True)
+
+@bot.tree.command(name='funfact', description='Get a random fun fact!')
+async def funfact(interaction: discord.Interaction):
+    fact = random.choice(FUN_FACTS)
+    embed = discord.Embed(
+        title="🎓 Fun Fact!",
+        description=fact,
+        color=discord.Color.green()
+    )
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='mc-get', description='Get Minecraft: China Edition download link')
+async def mc_get(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="⛏️ Minecraft: China Edition",
+        description="Click the link below to download Minecraft: China Edition",
+        color=discord.Color.green()
+    )
+    embed.add_field(
+        name="Download Link",
+        value="[https://news.4399.com/wdshijie/#search3-9e5f](https://news.4399.com/wdshijie/#search3-9e5f)",
+        inline=False
+    )
+    embed.set_footer(text="Minecraft: China Edition - Official Server")
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='console', description='Get latest bot logs and console output')
+async def console(interaction: discord.Interaction):
+    try:
+        result = subprocess.run(['tail', '-50', '/tmp/logs/Discord_Bot_20251121_093711_044.log'], 
+                              capture_output=True, text=True, timeout=5)
+        logs = result.stdout or "No logs available"
+        
+        if len(logs) > 1900:
+            logs = logs[-1900:]
+        
+        embed = discord.Embed(
+            title="📋 Bot Console Output",
+            description=f"```\n{logs}\n```",
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text="Last 50 lines")
+        
+        await interaction.response.send_message(embed=embed)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Error retrieving logs: {str(e)}", ephemeral=True)
 
 @bot.tree.command(name='spawn', description='Spawn a random Beyblade!')
 async def spawn(interaction: discord.Interaction):
@@ -333,14 +431,14 @@ async def spawn(interaction: discord.Interaction):
 @app_commands.describe(name='Name of the Beyblade to catch')
 async def catch(interaction: discord.Interaction, name: str):
     if not hasattr(bot, 'last_spawns') or interaction.channel.id not in bot.last_spawns:
-        await interaction.response.send_message("There's no Beyblade to catch right now!", ephemeral=True)
+        await interaction.response.send_message("❌ There's no Beyblade to catch right now!", ephemeral=True)
         return
     
     spawn_data = bot.last_spawns[interaction.channel.id]
     beyblade = spawn_data['beyblade']
     
     if name.lower() != beyblade['name'].lower():
-        await interaction.response.send_message(f"That's not the right name! Try again.", ephemeral=True)
+        await interaction.response.send_message(f"❌ That's not the right name! The correct name is: **{beyblade['name']}**", ephemeral=True)
         return
     
     data = load_beyblade_data()
@@ -371,7 +469,7 @@ async def collection(interaction: discord.Interaction):
     user_id = str(interaction.user.id)
     
     if user_id not in data or not data[user_id]['beyblades']:
-        await interaction.response.send_message("You don't have any Beyblades yet! Use `/spawn` to find some.", ephemeral=True)
+        await interaction.response.send_message("❌ You don't have any Beyblades yet! Use `/spawn` to find some.", ephemeral=True)
         return
     
     beyblades = data[user_id]['beyblades']
@@ -398,11 +496,11 @@ async def collection(interaction: discord.Interaction):
 @app_commands.describe(opponent='The player to challenge')
 async def battle(interaction: discord.Interaction, opponent: discord.Member):
     if opponent.bot:
-        await interaction.response.send_message("You can't battle a bot!", ephemeral=True)
+        await interaction.response.send_message("❌ You can't battle a bot!", ephemeral=True)
         return
     
     if opponent.id == interaction.user.id:
-        await interaction.response.send_message("You can't battle yourself!", ephemeral=True)
+        await interaction.response.send_message("❌ You can't battle yourself!", ephemeral=True)
         return
     
     data = load_beyblade_data()
@@ -410,11 +508,11 @@ async def battle(interaction: discord.Interaction, opponent: discord.Member):
     opp_id = str(opponent.id)
     
     if user_id not in data or not data[user_id]['beyblades']:
-        await interaction.response.send_message("You don't have any Beyblades! Use `/spawn` to catch some.", ephemeral=True)
+        await interaction.response.send_message("❌ You don't have any Beyblades! Use `/spawn` to catch some.", ephemeral=True)
         return
     
     if opp_id not in data or not data[opp_id]['beyblades']:
-        await interaction.response.send_message(f"{opponent.name} doesn't have any Beyblades!", ephemeral=True)
+        await interaction.response.send_message(f"❌ {opponent.name} doesn't have any Beyblades!", ephemeral=True)
         return
     
     player_bey = data[user_id]['beyblades'][0]
@@ -474,7 +572,7 @@ async def stats(interaction: discord.Interaction, member: discord.Member = None)
     user_id = str(member.id)
     
     if user_id not in data:
-        await interaction.response.send_message(f"{member.name} hasn't started their Beyblade journey yet!", ephemeral=True)
+        await interaction.response.send_message(f"❌ {member.name} hasn't started their Beyblade journey yet!", ephemeral=True)
         return
     
     user_data = data[user_id]
@@ -498,54 +596,35 @@ async def stats(interaction: discord.Interaction, member: discord.Member = None)
 async def commands_list(interaction: discord.Interaction):
     embed = discord.Embed(
         title="🤖 Discord Bot Commands",
-        description="Here are all the available slash commands:",
+        description="All available slash commands (/):",
         color=discord.Color.blue()
     )
     
     embed.add_field(
+        name="🎵 Music",
+        value="`/play <url>` - Play YouTube\n`/loop` - Toggle loop\n`/stop` - Stop music\n`/leave` - Leave VC",
+        inline=False
+    )
+    
+    embed.add_field(
         name="🌍 Translation",
-        value="`/translate <lang_code> <text>` - Translate text to any language",
-        inline=False
-    )
-    
-    embed.add_field(
-        name="💰 Fun",
-        value="`/robux [amount]` - Generate fake robux as a joke!",
-        inline=False
-    )
-    
-    embed.add_field(
-        name="📖 Bible",
-        value="`/verse` - Get a random Bible verse",
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🎵 Music Player",
-        value="`/play <youtube_url>` - Play music from YouTube\n"
-              "`/loop` - Toggle loop for current song\n"
-              "`/stop` - Stop playing music\n"
-              "`/leave` - Leave voice channel",
+        value="`/translate <lang> <text>` - Translate",
         inline=False
     )
     
     embed.add_field(
         name="⚔️ Beyblade Game",
-        value="`/spawn` - Spawn a random Beyblade\n"
-              "`/catch <name>` - Catch a spawned Beyblade\n"
-              "`/collection` - View your collection\n"
-              "`/battle @user` - Battle another player\n"
-              "`/stats [@user]` - View battle stats",
+        value="`/spawn` `/catch` `/collection` `/battle` `/stats`",
         inline=False
     )
     
     embed.add_field(
-        name="🛡️ Auto-Moderation",
-        value="Automatically mutes members for 5 minutes when they use inappropriate language",
+        name="Fun Commands",
+        value="`/robux` `/verse` `/funfact` `/mc-get` `/console`",
         inline=False
     )
     
-    embed.set_footer(text="All commands use slash commands (/) | Have fun!")
+    embed.set_footer(text="Use / to see all commands with descriptions")
     
     await interaction.response.send_message(embed=embed)
 
