@@ -598,8 +598,8 @@ async def sell_card(interaction: discord.Interaction, card: str):
 @bot.tree.command(name='admin-give', description='🔧 [ADMIN] Give VorkTek-Bucks')
 @app_commands.describe(user='User to give to', amount='Amount')
 async def admin_give(interaction: discord.Interaction, user: discord.User, amount: int):
-    if interaction.user.id != 1037160832905932801:
-        await interaction.response.send_message("❌ Admin only!", ephemeral=True)
+    if not interaction.user.guild_permissions.administrator and interaction.user != interaction.guild.owner:
+        await interaction.response.send_message("❌ Admin or server owner only!", ephemeral=True)
         return
     
     data = load_beyblade_data()
@@ -614,8 +614,8 @@ async def admin_give(interaction: discord.Interaction, user: discord.User, amoun
 @bot.tree.command(name='admin-card', description='🔧 [ADMIN] Give card')
 @app_commands.describe(user='User to give to', card='Card name')
 async def admin_card(interaction: discord.Interaction, user: discord.User, card: str):
-    if interaction.user.id != 1037160832905932801:
-        await interaction.response.send_message("❌ Admin only!", ephemeral=True)
+    if not interaction.user.guild_permissions.administrator and interaction.user != interaction.guild.owner:
+        await interaction.response.send_message("❌ Admin or server owner only!", ephemeral=True)
         return
     
     if card not in CARDS:
