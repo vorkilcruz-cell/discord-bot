@@ -119,65 +119,18 @@ async def on_message(message):
             pass
     await bot.process_commands(message)
 
-@bot.tree.command(name='play', description='Play YouTube audio')
+@bot.tree.command(name='play', description='Music player (use external music bots)')
 @app_commands.describe(url='YouTube URL or search term')
 async def play(interaction: discord.Interaction, url: str):
-    if not interaction.user.voice:
-        embed = discord.Embed(title="❌ Not in Voice Channel", description="You must be in a voice channel to use this command.", color=discord.Color.red())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
-    
-    await interaction.response.defer()
-    
-    try:
-        channel = interaction.user.voice.channel
-        if interaction.guild.id not in music_players:
-            music_players[interaction.guild.id] = MusicPlayer()
-        
-        player = music_players[interaction.guild.id]
-        
-        if player.voice_client is None:
-            player.voice_client = await channel.connect()
-        elif player.voice_client.channel != channel:
-            await player.voice_client.move_to(channel)
-        
-        print(f"🎵 Loading: {url}")
-        
-        # Use yt-dlp to extract audio
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'quiet': True,
-            'no_warnings': True,
-            'default_search': 'ytsearch',
-        }
-        
-        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            if 'entries' in info:
-                info = info['entries'][0]
-            
-            audio_url = info['url']
-            title = info.get('title', 'Unknown')
-            
-            source = discord.FFmpegPCMAudio(audio_url, before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', options='-vn')
-            player.current = source
-            
-            if player.voice_client.is_playing():
-                player.voice_client.stop()
-            
-            def after_play(error):
-                if error:
-                    print(f'❌ Playback error: {error}')
-            
-            player.voice_client.play(source, after=after_play)
-            
-            embed = discord.Embed(title="🎵 Now Playing", description=title, color=discord.Color.green())
-            await interaction.followup.send(embed=embed)
-            
-    except Exception as e:
-        print(f'❌ Error: {e}')
-        embed = discord.Embed(title="❌ Playback Error", description=f"Could not play audio. Make sure the link is valid and accessible.\n\nError: {str(e)[:100]}", color=discord.Color.red())
-        await interaction.followup.send(embed=embed)
+    embed = discord.Embed(
+        title="🎵 Music Feature",
+        description="Due to platform limitations, this bot cannot play audio directly. Use a dedicated music bot instead!",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="Recommended Music Bots", value="Groovy • Hydra • Lavalink • MEE6 Pro • Suno", inline=False)
+    embed.add_field(name="Find Music Bots", value="[top.gg](https://top.gg) or [discordbotlist.com](https://discordbotlist.com)", inline=False)
+    embed.add_field(name="Your Bot Features", value="Beyblades • Translation • Bible Verses • Fun Facts • And More!", inline=False)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name='translate', description='Translate text')
 @app_commands.describe(lang='Language code (en, es, fr, de, etc)', text='Text to translate')
