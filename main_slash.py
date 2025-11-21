@@ -82,6 +82,14 @@ BEYBLADES = {
     ]
 }
 
+class MusicPlayer:
+    def __init__(self):
+        self.current = None
+        self.loop = False
+        self.voice_client = None
+
+music_players = {}
+
 def load_beyblade_data():
     if os.path.exists(BEYBLADE_FILE):
         with open(BEYBLADE_FILE, 'r') as f:
@@ -170,8 +178,6 @@ async def play(interaction: discord.Interaction, url: str):
         print(f'❌ Error: {e}')
         embed = discord.Embed(title="❌ Playback Error", description=f"Could not play audio. Make sure the link is valid and accessible.\n\nError: {str(e)[:100]}", color=discord.Color.red())
         await interaction.followup.send(embed=embed)
-
-music_players = {}
 
 @bot.tree.command(name='translate', description='Translate text')
 @app_commands.describe(lang='Language code (en, es, fr, de, etc)', text='Text to translate')
