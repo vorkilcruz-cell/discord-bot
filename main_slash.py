@@ -145,14 +145,32 @@ async def play(interaction: discord.Interaction, url: str):
     embed.add_field(name="Your Bot Features", value="Beyblades • Translation • Bible Verses • Fun Facts • And More!", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name='translate', description='Translate text')
-@app_commands.describe(lang='Language code (en, es, fr, de, etc)', text='Text to translate')
-async def translate(interaction: discord.Interaction, lang: str, text: str):
+LANGUAGES = {
+    'English': 'en', 'Spanish': 'es', 'French': 'fr', 'German': 'de', 'Italian': 'it',
+    'Portuguese': 'pt', 'Russian': 'ru', 'Japanese': 'ja', 'Chinese': 'zh-CN', 'Korean': 'ko',
+    'Arabic': 'ar', 'Hindi': 'hi', 'Turkish': 'tr', 'Vietnamese': 'vi', 'Thai': 'th',
+    'Polish': 'pl', 'Dutch': 'nl', 'Swedish': 'sv', 'Greek': 'el', 'Hebrew': 'he'
+}
+
+LANGUAGE_CHOICES = [app_commands.Choice(name=lang, value=code) for lang, code in LANGUAGES.items()]
+
+@bot.tree.command(name='translate', description='Translate text between languages')
+@app_commands.describe(
+    text='Text to translate',
+    source='Select source language',
+    target='Select target language'
+)
+@app_commands.choices(source=LANGUAGE_CHOICES, target=LANGUAGE_CHOICES)
+async def translate(interaction: discord.Interaction, text: str, source: app_commands.Choice[str], target: app_commands.Choice[str]):
     try:
-        result = translator.translate(text, dest=lang)
+        if source.value == target.value:
+            await interaction.response.send_message("❌ Source and target languages must be different!", ephemeral=True)
+            return
+        
+        result = translator.translate(text, src_lang=source.value, dest_lang=target.value)
         embed = discord.Embed(title="🌐 Translation", color=discord.Color.blue())
-        embed.add_field(name=f"Original", value=text, inline=False)
-        embed.add_field(name=f"{lang.upper()}", value=result.text, inline=False)
+        embed.add_field(name=f"📝 {source.name}", value=text, inline=False)
+        embed.add_field(name=f"✨ {target.name}", value=result.text, inline=False)
         await interaction.response.send_message(embed=embed)
     except Exception as e:
         await interaction.response.send_message(f"❌ Error: {str(e)[:100]}", ephemeral=True)
