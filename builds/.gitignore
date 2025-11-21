@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pythonlibs/
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# Bot data
+beyblade_data.json
+
+# Music files
+*.webm
+*.opus
+*.mp3
+*.m4a
+
+# Environment variables
+.env
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

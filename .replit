@@ -5,7 +5,7 @@ integrations = ["discord:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["libsodium", "ffmpeg"]
+packages = ["libsodium", "ffmpeg", "zip"]
 
 [workflows]
 runButton = "Project"
@@ -23,9 +23,9 @@ args = "Discord Bot"
 name = "Discord Bot"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python main.py"
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python main_slash.py"
