@@ -391,11 +391,47 @@ async def weather(interaction: discord.Interaction, country: str):
     
     await interaction.response.send_message(embed=embed)
 
+@bot.tree.command(name='youtube', description='📺 VorkilORCAL Channel')
+async def youtube(interaction: discord.Interaction):
+    await interaction.response.defer()
+    
+    try:
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': True,
+        }
+        
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info('https://www.youtube.com/@VorkilORCAL', download=False)
+            
+            if 'entries' in info and len(info['entries']) > 0:
+                latest = info['entries'][0]
+                title = latest.get('title', 'Latest Video')
+                video_url = f"https://www.youtube.com/watch?v={latest['id']}"
+                channel_url = 'https://www.youtube.com/@VorkilORCAL'
+                
+                embed = discord.Embed(title="📺 VorkilORCAL Channel", color=discord.Color.red())
+                embed.add_field(name="🎥 Latest Video", value=f"**{title}**\n[Watch Now]({video_url})", inline=False)
+                embed.add_field(name="📢 Subscribe", value=f"[Visit Channel]({channel_url})", inline=False)
+                embed.set_footer(text="YouTube Channel")
+                
+                await interaction.followup.send(embed=embed)
+            else:
+                embed = discord.Embed(title="📺 VorkilORCAL Channel", description="[Visit Channel](https://www.youtube.com/@VorkilORCAL)", color=discord.Color.red())
+                await interaction.followup.send(embed=embed)
+                
+    except Exception as e:
+        print(f'❌ YouTube Error: {e}')
+        embed = discord.Embed(title="📺 VorkilORCAL Channel", description="[Visit Channel](https://www.youtube.com/@VorkilORCAL)", color=discord.Color.red())
+        embed.add_field(name="Status", value="Latest video info unavailable, but you can visit the channel directly!", inline=False)
+        await interaction.followup.send(embed=embed)
+
 @bot.tree.command(name='commands', description='📖 All commands')
 async def commands_list(interaction: discord.Interaction):
     embed = discord.Embed(title="🤖 Command List", color=discord.Color.blue())
     embed.add_field(name="⚔️ BEYBLADE GAME", value="`/spawn` - Spawn random Beyblade\n`/catch` - Catch it\n`/collection` - View Beyblades\n`/battle` - Battle players\n`/stats` - View stats\n`/dex` - Pokedex", inline=False)
-    embed.add_field(name="🎨 FUN & INFO", value="`/robux` - Fake robux\n`/verse` - Bible verse\n`/funfact` - Fun fact\n`/weather` - Weather info\n`/translate` - Translate\n`/console` - Logs", inline=False)
+    embed.add_field(name="🎨 FUN & INFO", value="`/robux` - Fake robux\n`/verse` - Bible verse\n`/funfact` - Fun fact\n`/weather` - Weather\n`/youtube` - VorkilORCAL\n`/translate` - Translate\n`/console` - Logs", inline=False)
     await interaction.response.send_message(embed=embed)
 
 if __name__ == '__main__':
