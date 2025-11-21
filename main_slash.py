@@ -48,6 +48,19 @@ FUN_FACTS = [
     "Wombat poop is cubic shaped to prevent it from rolling away.",
 ]
 
+WEATHER_DATA = {
+    'USA': {'temp': 72, 'condition': '☀️ Sunny', 'humidity': 65, 'wind': '10 mph'},
+    'UK': {'temp': 59, 'condition': '🌧️ Rainy', 'humidity': 85, 'wind': '15 mph'},
+    'Japan': {'temp': 68, 'condition': '⛅ Partly Cloudy', 'humidity': 70, 'wind': '8 mph'},
+    'Australia': {'temp': 86, 'condition': '☀️ Hot & Sunny', 'humidity': 40, 'wind': '12 mph'},
+    'Canada': {'temp': 50, 'condition': '❄️ Cold', 'humidity': 75, 'wind': '20 mph'},
+    'Brazil': {'temp': 82, 'condition': '☀️ Sunny', 'humidity': 80, 'wind': '6 mph'},
+    'Germany': {'temp': 55, 'condition': '⛅ Cloudy', 'humidity': 70, 'wind': '14 mph'},
+    'France': {'temp': 61, 'condition': '🌧️ Rainy', 'humidity': 78, 'wind': '11 mph'},
+    'India': {'temp': 88, 'condition': '☀️ Hot', 'humidity': 65, 'wind': '9 mph'},
+    'Mexico': {'temp': 80, 'condition': '☀️ Sunny', 'humidity': 55, 'wind': '7 mph'},
+}
+
 # MASSIVE BEYBLADE DATABASE
 BEYBLADES = {
     'common': [
@@ -357,11 +370,32 @@ async def dex(interaction: discord.Interaction, number: int):
     
     await interaction.response.send_message("❌ Beyblade not found", ephemeral=True)
 
+@bot.tree.command(name='weather', description='🌤️ Check weather for any country')
+@app_commands.describe(country='Country name (USA, UK, Japan, Australia, Canada, Brazil, Germany, France, India, Mexico)')
+async def weather(interaction: discord.Interaction, country: str):
+    country = country.title()
+    
+    if country not in WEATHER_DATA:
+        available = ', '.join(WEATHER_DATA.keys())
+        embed = discord.Embed(title="❌ Country Not Found", description=f"Available countries:\n{available}", color=discord.Color.red())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+    
+    data = WEATHER_DATA[country]
+    embed = discord.Embed(title=f"🌤️ Weather in {country}", color=discord.Color.blue())
+    embed.add_field(name="🌡️ Temperature", value=f"**{data['temp']}°F**", inline=True)
+    embed.add_field(name="Condition", value=data['condition'], inline=True)
+    embed.add_field(name="💨 Wind", value=data['wind'], inline=True)
+    embed.add_field(name="💧 Humidity", value=f"**{data['humidity']}%**", inline=True)
+    embed.set_footer(text="⚠️ Simulated Weather Data")
+    
+    await interaction.response.send_message(embed=embed)
+
 @bot.tree.command(name='commands', description='📖 All commands')
 async def commands_list(interaction: discord.Interaction):
     embed = discord.Embed(title="🤖 Command List", color=discord.Color.blue())
     embed.add_field(name="⚔️ BEYBLADE GAME", value="`/spawn` - Spawn random Beyblade\n`/catch` - Catch it\n`/collection` - View Beyblades\n`/battle` - Battle players\n`/stats` - View stats\n`/dex` - Pokedex", inline=False)
-    embed.add_field(name="🎨 FUN", value="`/robux` - Fake robux\n`/verse` - Bible verse\n`/funfact` - Fun fact\n`/mc-get` - Minecraft\n`/translate` - Translate\n`/console` - Logs", inline=False)
+    embed.add_field(name="🎨 FUN & INFO", value="`/robux` - Fake robux\n`/verse` - Bible verse\n`/funfact` - Fun fact\n`/weather` - Weather info\n`/translate` - Translate\n`/console` - Logs", inline=False)
     await interaction.response.send_message(embed=embed)
 
 if __name__ == '__main__':
