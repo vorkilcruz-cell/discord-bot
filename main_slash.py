@@ -35,6 +35,12 @@ translator = Translator()
 CURSE_WORDS = ['fuck', 'shit', 'damn', 'bitch', 'ass', 'bastard', 'crap', 'hell']
 BEYBLADE_FILE = 'beyblade_data.json'
 
+CARDS = {
+    'Churro Card': {'emoji': '🌮', 'rarity': 'rare', 'value': 500},
+    'Ohio Card': {'emoji': '🗺️', 'rarity': 'legendary', 'value': 1000},
+    'Vox Card': {'emoji': '🎤', 'rarity': 'legendary', 'value': 1500},
+}
+
 FUN_FACTS = [
     "Honey never spoils. Archaeologists have found 3000-year-old honey in Egyptian tombs that was still edible!",
     "A group of flamingos is called a 'flamboyance'.",
@@ -112,6 +118,21 @@ def load_beyblade_data():
 def save_beyblade_data(data):
     with open(BEYBLADE_FILE, 'w') as f:
         json.dump(data, f, indent=2)
+
+def init_user(data, user_id):
+    uid = str(user_id)
+    if uid not in data:
+        data[uid] = {
+            'beyblades': [],
+            'level': 1,
+            'gold': 0,
+            'wins': 0,
+            'losses': 0,
+            'vorkteks': 1000,
+            'cards': {},
+            'last_daily': None
+        }
+    return data
 
 @bot.event
 async def on_ready():
@@ -445,10 +466,178 @@ async def youtube(interaction: discord.Interaction):
         embed.add_field(name="Status", value="Latest video info unavailable, but you can visit the channel directly!", inline=False)
         await interaction.followup.send(embed=embed)
 
+@bot.tree.command(name='balance', description='💰 Check VorkTek-Bucks and cards')
+async def balance(interaction: discord.Interaction, member: discord.Member = None):
+    member = member or interaction.user
+    data = load_beyblade_data()
+    data = init_user(data, member.id)
+    save_beyblade_data(data)
+    
+    uid = str(member.id)
+    vorkteks = data[uid].get('vorkteks', 1000)
+    cards = data[uid].get('cards', {})
+    
+    embed = discord.Embed(title=f"💰 {member.name}'s Wallet", color=discord.Color.gold())
+    embed.add_field(name="VorkTek-Bucks", value=f"**{vorkteks:,}** 💵", inline=False)
+    
+    if cards:
+        card_list = '\n'.join([f"{CARDS[card]['emoji']} {card} x{count}" for card, count in cards.items()])
+        embed.add_field(name="📦 Cards", value=card_list, inline=False)
+    else:
+        embed.add_field(name="📦 Cards", value="No cards yet!", inline=False)
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='daily', description='📅 Collect daily VorkTek-Bucks bonus')
+async def daily_bonus(interaction: discord.Interaction):
+    data = load_beyblade_data()
+    data = init_user(data, interaction.user.id)
+    uid = str(interaction.user.id)
+    
+    today = datetime.now().strftime('%Y-%m-%d')
+    last_daily = data[uid].get('last_daily')
+    
+    if last_daily == today:
+        await interaction.response.send_message("❌ You already claimed your daily bonus today! Come back tomorrow.", ephemeral=True)
+        return
+    
+    bonus = 500
+    data[uid]['vorkteks'] = data[uid].get('vorkteks', 1000) + bonus
+    data[uid]['last_daily'] = today
+    save_beyblade_data(data)
+    
+    embed = discord.Embed(title="📅 Daily Bonus Claimed!", description=f"You got **{bonus}** VorkTek-Bucks!", color=discord.Color.green())
+    embed.add_field(name="Total", value=f"**{data[uid]['vorkteks']:,}** 💵", inline=False)
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='gamble', description='🎰 Gamble your VorkTek-Bucks')
+@app_commands.describe(amount='Amount to gamble')
+async def gamble(interaction: discord.Interaction, amount: int):
+    data = load_beyblade_data()
+    data = init_user(data, interaction.user.id)
+    uid = str(interaction.user.id)
+    
+    if amount <= 0:
+        await interaction.response.send_message("❌ Enter a positive amount!", ephemeral=True)
+        return
+    
+    if data[uid].get('vorkteks', 0) < amount:
+        await interaction.response.send_message("❌ Not enough VorkTek-Bucks!", ephemeral=True)
+        return
+    
+    result = random.choice(['win', 'win', 'win', 'loss'])
+    
+    if result == 'win':
+        data[uid]['vorkteks'] += amount
+        msg = f"🎉 **YOU WIN!** +{amount:,} VorkTek-Bucks!\nTotal: **{data[uid]['vorkteks']:,}** 💵"
+    else:
+        data[uid]['vorkteks'] -= amount
+        msg = f"😢 **YOU LOSE!** -{amount:,} VorkTek-Bucks!\nTotal: **{data[uid]['vorkteks']:,}** 💵"
+    
+    save_beyblade_data(data)
+    embed = discord.Embed(title="🎰 Gamble Result", description=msg, color=discord.Color.green() if result == 'win' else discord.Color.red())
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='cards', description='📦 View collectible cards shop')
+async def cards_shop(interaction: discord.Interaction):
+    embed = discord.Embed(title="📦 Collectible Cards", color=discord.Color.purple())
+    for card_name, card_data in CARDS.items():
+        embed.add_field(name=f"{card_data['emoji']} {card_name}", value=f"**{card_data['rarity'].upper()}**\nValue: {card_data['value']:,} VorkTek-Bucks\nUse: `/buy {card_name}`", inline=True)
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='buy', description='🛒 Buy a card')
+@app_commands.describe(card='Card name (Churro Card, Ohio Card, Vox Card)')
+async def buy_card(interaction: discord.Interaction, card: str):
+    if card not in CARDS:
+        await interaction.response.send_message(f"❌ Card not found. Available: {', '.join(CARDS.keys())}", ephemeral=True)
+        return
+    
+    data = load_beyblade_data()
+    data = init_user(data, interaction.user.id)
+    uid = str(interaction.user.id)
+    
+    card_price = CARDS[card]['value']
+    if data[uid].get('vorkteks', 0) < card_price:
+        await interaction.response.send_message(f"❌ Need {card_price:,} VorkTek-Bucks, you have {data[uid].get('vorkteks', 0):,}!", ephemeral=True)
+        return
+    
+    data[uid]['vorkteks'] -= card_price
+    if card not in data[uid]['cards']:
+        data[uid]['cards'][card] = 0
+    data[uid]['cards'][card] += 1
+    save_beyblade_data(data)
+    
+    embed = discord.Embed(title="✅ Card Purchased!", description=f"Bought **{card}** {CARDS[card]['emoji']}\nRemaining: **{data[uid]['vorkteks']:,}** VorkTek-Bucks", color=discord.Color.green())
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='sell', description='💳 Sell a card')
+@app_commands.describe(card='Card name (Churro Card, Ohio Card, Vox Card)')
+async def sell_card(interaction: discord.Interaction, card: str):
+    if card not in CARDS:
+        await interaction.response.send_message(f"❌ Card not found!", ephemeral=True)
+        return
+    
+    data = load_beyblade_data()
+    data = init_user(data, interaction.user.id)
+    uid = str(interaction.user.id)
+    
+    if card not in data[uid]['cards'] or data[uid]['cards'][card] == 0:
+        await interaction.response.send_message(f"❌ You don't have this card!", ephemeral=True)
+        return
+    
+    card_value = CARDS[card]['value']
+    sell_price = int(card_value * 0.8)
+    
+    data[uid]['vorkteks'] += sell_price
+    data[uid]['cards'][card] -= 1
+    save_beyblade_data(data)
+    
+    embed = discord.Embed(title="✅ Card Sold!", description=f"Sold **{card}** {CARDS[card]['emoji']}\nGot: **{sell_price:,}** VorkTek-Bucks\nTotal: **{data[uid]['vorkteks']:,}** VorkTek-Bucks", color=discord.Color.green())
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='admin-give', description='🔧 [ADMIN] Give VorkTek-Bucks')
+@app_commands.describe(user='User to give to', amount='Amount')
+async def admin_give(interaction: discord.Interaction, user: discord.User, amount: int):
+    if interaction.user.id != 1037160832905932801:
+        await interaction.response.send_message("❌ Admin only!", ephemeral=True)
+        return
+    
+    data = load_beyblade_data()
+    data = init_user(data, user.id)
+    uid = str(user.id)
+    
+    data[uid]['vorkteks'] = data[uid].get('vorkteks', 1000) + amount
+    save_beyblade_data(data)
+    
+    await interaction.response.send_message(f"✅ Gave {amount:,} VorkTek-Bucks to {user.mention}! Total: {data[uid]['vorkteks']:,}")
+
+@bot.tree.command(name='admin-card', description='🔧 [ADMIN] Give card')
+@app_commands.describe(user='User to give to', card='Card name')
+async def admin_card(interaction: discord.Interaction, user: discord.User, card: str):
+    if interaction.user.id != 1037160832905932801:
+        await interaction.response.send_message("❌ Admin only!", ephemeral=True)
+        return
+    
+    if card not in CARDS:
+        await interaction.response.send_message(f"❌ Card not found!", ephemeral=True)
+        return
+    
+    data = load_beyblade_data()
+    data = init_user(data, user.id)
+    uid = str(user.id)
+    
+    if card not in data[uid]['cards']:
+        data[uid]['cards'][card] = 0
+    data[uid]['cards'][card] += 1
+    save_beyblade_data(data)
+    
+    await interaction.response.send_message(f"✅ Gave **{card}** {CARDS[card]['emoji']} to {user.mention}!")
+
 @bot.tree.command(name='commands', description='📖 All commands')
 async def commands_list(interaction: discord.Interaction):
     embed = discord.Embed(title="🤖 Command List", color=discord.Color.blue())
-    embed.add_field(name="⚔️ BEYBLADE GAME", value="`/spawn` - Spawn random Beyblade\n`/catch` - Catch it\n`/collection` - View Beyblades\n`/battle` - Battle players\n`/stats` - View stats\n`/dex` - Pokedex", inline=False)
+    embed.add_field(name="⚔️ BEYBLADE GAME", value="`/spawn` - Spawn Beyblade\n`/catch` - Catch it\n`/collection` - View Beyblades\n`/battle` - Battle players\n`/stats` - View stats\n`/dex` - Pokedex", inline=False)
+    embed.add_field(name="💰 VORKTEKS & CARDS", value="`/balance` - Check wallet\n`/daily` - Daily bonus\n`/gamble` - Gamble currency\n`/cards` - View cards\n`/buy` - Buy card\n`/sell` - Sell card", inline=False)
     embed.add_field(name="🎨 FUN & INFO", value="`/robux` - Fake robux\n`/verse` - Bible verse\n`/funfact` - Fun fact\n`/weather` - Weather\n`/youtube` - VorkilORCAL\n`/translate` - Translate\n`/console` - Logs", inline=False)
     await interaction.response.send_message(embed=embed)
 
