@@ -239,39 +239,39 @@ async def on_ready():
     
     # Sync commands only once
     if not bot.synced:
-        # Wait a moment to ensure all decorators are loaded
-        await asyncio.sleep(1)
+        # Wait for all decorators to load
+        await asyncio.sleep(2)
         
         command_count = len(bot.tree._get_all_commands())
         logger.info(f"📡 {command_count} commands loaded in tree")
         
-        # Try global sync first
-        logger.info("🔄 Attempting global command sync...")
+        # Target guild ID where user wants updates
+        TARGET_GUILD_ID = 1441347454246064142
+        target_guild = discord.Object(id=TARGET_GUILD_ID)
+        
+        # Strategy: Try to sync to target guild specifically
+        logger.info(f"🎯 Syncing {command_count} commands to target guild {TARGET_GUILD_ID}...")
+        
         try:
-            synced = await bot.tree.sync()
-            logger.info(f"✅ GLOBAL SYNC SUCCESS: Synced {len(synced)} commands!")
+            synced = await bot.tree.sync(guild=target_guild)
+            logger.info(f"✅ TARGET GUILD SYNC SUCCESS: Synced {len(synced)} commands to guild {TARGET_GUILD_ID}!")
             bot.synced = True
+            
+            # Also try global sync as backup
+            if not bot.synced:
+                try:
+                    global_synced = await bot.tree.sync()
+                    logger.info(f"✅ Global sync also succeeded: {len(global_synced)} commands")
+                except:
+                    logger.info("⏭️  Global sync failed (expected due to Entry Point) - target guild sync is active")
+                    
         except discord.errors.HTTPException as e:
             if e.code == 50240:
-                # Entry Point conflict - try guild-by-guild instead
-                logger.warning(f"⚠️ Discord Entry Point conflict (Error 50240) - syncing by guild...")
-                guild_count = 0
-                
-                for guild in bot.guilds:
-                    try:
-                        synced_cmds = await bot.tree.sync(guild=discord.Object(id=guild.id))
-                        logger.info(f"✅ Guild '{guild.name}': Synced {len(synced_cmds)} commands")
-                        guild_count += 1
-                    except Exception as guild_e:
-                        logger.warning(f"❌ Guild '{guild.name}' failed: {guild_e}")
-                
-                if guild_count > 0:
-                    logger.info(f"✅ Guild sync complete: {guild_count}/{len(bot.guilds)} guilds")
-                    bot.synced = True
-                else:
-                    logger.error(f"❌ Both global and guild sync failed")
+                logger.warning(f"⚠️ Target guild sync blocked by Entry Point (50240)")
+                logger.warning(f"📝 This is a Discord limitation - Entry Point command is blocking sync")
+                logger.info(f"💡 Solution: Delete Entry Point command in Discord Developer Portal > App Commands")
             else:
-                logger.warning(f"⚠️ Sync error (Code {e.code}): {e}")
+                logger.warning(f"❌ Guild sync error (Code {e.code}): {e}")
     
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Beyblades spin | /commands"))
     logger.info(f'📊 Status updated to: Beyblades spin | /commands')
