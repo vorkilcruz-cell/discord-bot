@@ -306,6 +306,32 @@ async def play(interaction: discord.Interaction, url: str):
     embed.add_field(name="Your Bot Features", value="Beyblades • Translation • Bible Verses • Fun Facts • And More!", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@bot.tree.command(name='meet_again', description='🎵 Play "Meet Again" video in VC')
+async def meet_again(interaction: discord.Interaction):
+    if not interaction.user.voice:
+        embed = discord.Embed(
+            title="❌ Not in Voice Channel",
+            description="You need to be in a voice channel to use this command!",
+            color=discord.Color.red()
+        )
+        log_command_result('meet_again', interaction.user, 'error', 'User not in voice channel')
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+    
+    embed = discord.Embed(
+        title="🎵 Meet Again - Video Link",
+        description="Here's the video you requested!",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="Video", value="[Meet Again - YouTube](https://youtu.be/2a7_yCxMgZc)", inline=False)
+    embed.add_field(name="Status", value="⚠️ Due to platform limitations, this bot cannot play audio in voice channels.\n\nUse a dedicated music bot (Groovy, Hydra, MEE6) to play this in your VC!", inline=False)
+    embed.add_field(name="Quick Setup", value="1. Add a music bot to your server\n2. Use `/play` or the music bot's command\n3. Paste the video link or search", inline=False)
+    embed.add_field(name="Recommended Bots", value="[Groovy](https://groovy.bot) • [Hydra](https://hydra.bot) • [MEE6](https://mee6.xyz)", inline=False)
+    embed.set_thumbnail(url="https://img.youtube.com/vi/2a7_yCxMgZc/maxresdefault.jpg")
+    
+    log_command_result('meet_again', interaction.user, 'success', f'Shared "Meet Again" video')
+    await interaction.response.send_message(embed=embed)
+
 LANGUAGES = {
     'English': 'en', 'Spanish': 'es', 'French': 'fr', 'German': 'de', 'Italian': 'it',
     'Portuguese': 'pt', 'Russian': 'ru', 'Japanese': 'ja', 'Chinese': 'zh-CN', 'Korean': 'ko',
@@ -1013,6 +1039,7 @@ async def commands_list(interaction: discord.Interaction):
     embed.add_field(name="💰 VORKTEKS & CARDS", value="`/balance` - Check wallet\n`/daily` - Daily bonus\n`/gamble` - Gamble currency\n`/cards` - View cards\n`/buy` - Buy card\n`/sell` - Sell card", inline=False)
     embed.add_field(name="💸 MONEY TRANSFER & LOANS", value="`/give` - Give VorkTek-Bucks\n`/loan` - Borrow from someone\n`/repay` - Repay a loan\n`/loans` - View your loans", inline=False)
     embed.add_field(name="🤐 CONFESSIONS", value="`/confess` - Submit confession\n`/confessions` - View all confessions", inline=False)
+    embed.add_field(name="🎵 MUSIC", value="`/meet_again` - Share \"Meet Again\" video\n`/play` - Music player info", inline=False)
     embed.add_field(name="🔧 ADMIN", value="`/channel_set` - Set alert channel\n`/admin-give` - Give VorkTek-Bucks\n`/admin-card` - Give card\n`/clear-confessions` - Clear all confessions", inline=False)
     embed.add_field(name="🎨 FUN & INFO", value="`/robux` - Fake robux\n`/verse` - Bible verse\n`/funfact` - Fun fact\n`/weather` - Weather\n`/youtube` - VorkilORCAL\n`/translate` - Translate\n`/console` - Logs", inline=False)
     await interaction.response.send_message(embed=embed)
