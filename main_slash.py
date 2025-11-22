@@ -76,18 +76,33 @@ def setup_logging():
     return logger
 
 def send_agent_webhook(indicator: str, content: str):
-    """Send formatted messages to DC_AGENT_WEBHOOK_URL"""
+    """
+    Send formatted messages to DC_AGENT_WEBHOOK_URL for comprehensive agent activity logging.
+    Tracks: code edits, file reads, decisions, commands, actions, and completions.
+    """
     if not DC_AGENT_WEBHOOK_URL:
-        return
+        return False
     
     try:
         timestamp = datetime.now().strftime('%H:%M:%S')
         message = f"[{timestamp}] **{indicator}**\n{content}"
+        
+        # Handle long messages by chunking
         chunks = [message[i:i+1900] for i in range(0, len(message), 1900)]
+        
         for chunk in chunks:
-            requests.post(DC_AGENT_WEBHOOK_URL, json={"content": chunk}, timeout=5)
+            response = requests.post(
+                DC_AGENT_WEBHOOK_URL, 
+                json={"content": chunk}, 
+                timeout=5
+            )
+            if response.status_code not in [200, 204]:
+                logger.debug(f"Webhook response code: {response.status_code}")
+        
+        return True
     except Exception as e:
         logger.debug(f"Failed to send agent webhook: {e}")
+        return False
 
 logger = setup_logging()
 translator = Translator()

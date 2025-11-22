@@ -94,12 +94,18 @@ Preferred communication style: Simple, everyday language.
 ## Logging & Monitoring
 - **Console Logging**: All bot activity logged to stdout with timestamps
 - **Discord Webhook Logging**: Bot logs forwarded to DISCORD_WEBHOOK_URL for monitoring command execution and errors
-- **Agent Webhook Logging**: Code changes and agent activity forwarded to DC_AGENT_WEBHOOK_URL with formatted indicators:
+- **Agent Webhook Logging**: Comprehensive agent activity forwarded to DC_AGENT_WEBHOOK_URL with formatted indicators:
   - `Agent Response >>` - Agent response messages
-  - `User Input >>` - User requests
-  - `Code Edit >>` - Code modifications
-  - `Action >>` - Current tasks being performed
-- **Rationale**: Real-time monitoring of bot health and agent activities for debugging and auditing
+  - `User Input >>` - User requests and incoming data
+  - `Code Edit >>` - Code file modifications and changes
+  - `File Read >>` - File analysis and data access
+  - `File Create >>` - New files being created
+  - `Command >>` - Shell commands and tool execution
+  - `Decision >>` - Reasoning, analysis, and decision points
+  - `Action >>` - Current tasks and operations being performed
+  - `Status >>` - System state, progress, and updates
+  - `Completion >>` - Task completion and results
+- **Rationale**: Real-time monitoring of bot health and comprehensive agent activity audit trail for debugging and auditing
 
 # External Dependencies
 
