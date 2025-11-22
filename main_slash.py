@@ -30,6 +30,9 @@ bot = MyBot()
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
 DC_AGENT_WEBHOOK_URL = os.getenv('DC_AGENT_WEBHOOK_URL')
+AGENT_WEBHOOK_OUTPUT = os.getenv('AGENT_WEBHOOK_OUTPUT')
+AGENT_USER_ID = 1421455818284601344
+AGENT_CHANNEL_ID = 1441677818261143643
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN required")
 
@@ -327,6 +330,67 @@ async def command_callback(interaction: discord.Interaction) -> bool:
     return True
     
 bot.tree.interaction_check = command_callback
+
+def send_to_webhooks(indicator: str, content: str):
+    """Send message to both DC_AGENT_WEBHOOK_URL and AGENT_WEBHOOK_OUTPUT"""
+    if not DC_AGENT_WEBHOOK_URL and not AGENT_WEBHOOK_OUTPUT:
+        return False
+    
+    timestamp = datetime.now().strftime('%H:%M:%S')
+    message = f"[{timestamp}] **{indicator}**\n{content}"
+    
+    try:
+        # Send to DC_AGENT_WEBHOOK_URL
+        if DC_AGENT_WEBHOOK_URL:
+            chunks = [message[i:i+1900] for i in range(0, len(message), 1900)]
+            for chunk in chunks:
+                requests.post(DC_AGENT_WEBHOOK_URL, json={"content": chunk}, timeout=5)
+        
+        # Send to AGENT_WEBHOOK_OUTPUT
+        if AGENT_WEBHOOK_OUTPUT:
+            chunks = [message[i:i+1900] for i in range(0, len(message), 1900)]
+            for chunk in chunks:
+                requests.post(AGENT_WEBHOOK_OUTPUT, json={"content": chunk}, timeout=5)
+        
+        return True
+    except Exception as e:
+        logger.debug(f"Webhook send error: {e}")
+        return False
+
+@bot.event
+async def on_agent_message(message):
+    """Listen for messages from agent user in dedicated channel"""
+    # Only respond to messages in the agent channel from the agent user
+    if message.channel.id != AGENT_CHANNEL_ID or message.author.id != AGENT_USER_ID:
+        return
+    
+    if message.author.bot:
+        return
+    
+    user_input = message.content.strip()
+    
+    # Log user input to both webhooks
+    input_log = f"""📨 **Message Received:**
+User: {message.author} (ID: {message.author.id})
+Channel: {message.channel.name} (ID: {message.channel.id})
+Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Content:
+{user_input}"""
+    
+    send_to_webhooks("User Input >>", input_log)
+    
+    # Send acknowledgment to Discord
+    try:
+        await message.add_reaction('✅')
+        embed = discord.Embed(
+            title="🤖 Message Received",
+            description=f"Your message has been received and logged.\n\n**Message:** {user_input[:200]}",
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text="Check agent webhooks for response")
+        await message.reply(embed=embed, mention_author=False)
+    except:
+        pass
 
 @bot.event
 async def on_message(message):
