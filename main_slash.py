@@ -358,44 +358,40 @@ def send_to_webhooks(indicator: str, content: str):
         return False
 
 @bot.event
-async def on_agent_message(message):
-    """Listen for messages from agent user in dedicated channel"""
-    # Only respond to messages in the agent channel from the agent user
-    if message.channel.id != AGENT_CHANNEL_ID or message.author.id != AGENT_USER_ID:
-        return
-    
+async def on_message(message):
     if message.author.bot:
         return
     
-    user_input = message.content.strip()
-    
-    # Log user input to both webhooks
-    input_log = f"""📨 **Message Received:**
+    # Check if this is a message from agent in the dedicated channel
+    if message.channel.id == AGENT_CHANNEL_ID and message.author.id == AGENT_USER_ID:
+        user_input = message.content.strip()
+        
+        # Log user input to both webhooks
+        input_log = f"""📨 **Message Received:**
 User: {message.author} (ID: {message.author.id})
 Channel: {message.channel.name} (ID: {message.channel.id})
 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 Content:
 {user_input}"""
+        
+        send_to_webhooks("User Input >>", input_log)
+        
+        # Send acknowledgment to Discord
+        try:
+            await message.add_reaction('✅')
+            embed = discord.Embed(
+                title="🤖 Message Received",
+                description=f"Your message has been received and logged.\n\n**Message:** {user_input[:200]}",
+                color=discord.Color.blue()
+            )
+            embed.set_footer(text="Check agent webhooks for response")
+            await message.reply(embed=embed, mention_author=False)
+        except Exception as e:
+            logger.debug(f"Failed to acknowledge message: {e}")
+        
+        return  # Don't process further
     
-    send_to_webhooks("User Input >>", input_log)
-    
-    # Send acknowledgment to Discord
-    try:
-        await message.add_reaction('✅')
-        embed = discord.Embed(
-            title="🤖 Message Received",
-            description=f"Your message has been received and logged.\n\n**Message:** {user_input[:200]}",
-            color=discord.Color.blue()
-        )
-        embed.set_footer(text="Check agent webhooks for response")
-        await message.reply(embed=embed, mention_author=False)
-    except:
-        pass
-
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
+    # Regular message processing (curse word check, etc.)
     if any(word in message.content.lower() for word in CURSE_WORDS):
         try:
             timeout_until = discord.utils.utcnow() + timedelta(minutes=5)
