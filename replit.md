@@ -3,11 +3,15 @@
 This is a feature-rich Discord bot that provides multiple entertainment and utility features including language translation, music playback from YouTube, Bible verse retrieval, auto-moderation, and a Beyblade collection game similar to Pokétwo. The bot uses modern Discord slash commands (`/`) exclusively for a better user experience with auto-completion and Discord's recommended approach.
 
 ## Latest Version
-**Beta v0.01** - November 21, 2025
-- All commands converted to slash commands (/)
-- Enhanced music playback with improved FFmpeg configuration
-- Security improvements with environment variable token management
-- Build package created in `builds/beta_0.01.zip`
+**Beta v0.02** - November 22, 2025
+- VorkTek-Bucks currency system with daily bonuses, gambling (75% win rate), card trading
+- Money transfer system (`/give` command)
+- Loan system with 10% interest (`/loan`, `/repay`, `/loans` commands)
+- Anonymous confessions system (`/confess`, `/confessions`, `/clear-confessions`)
+- Bot online/offline alerts with configurable channel (`/channel_set`)
+- Meet Again video link command (`/meet_again`)
+- Comprehensive logging to Discord webhooks (DISCORD_WEBHOOK_URL)
+- Agent activity monitoring via DC_AGENT_WEBHOOK_URL for tracking all code changes and interactions
 
 # User Preferences
 
@@ -76,8 +80,26 @@ Preferred communication style: Simple, everyday language.
 
 ## Environment Configuration
 - **Method**: Environment variables for sensitive data
-- **Required Variables**: `DISCORD_TOKEN`
+- **Required Variables**: 
+  - `DISCORD_TOKEN` - Bot authentication token
+  - `DISCORD_WEBHOOK_URL` (optional) - Receives bot console logs and command activity
+  - `DC_AGENT_WEBHOOK_URL` (optional) - Receives agent activity logs (code changes, interactions)
+- **Data Storage Files**:
+  - `beyblade_data.json` - Beyblades, currency, cards, stats per user
+  - `confessions.json` - Anonymous confessions database
+  - `loans.json` - Active and repaid loans
+  - `channel_config.json` - Bot alert channel configuration
 - **Rationale**: Prevents credential exposure in version control; compatible with deployment platforms like Replit
+
+## Logging & Monitoring
+- **Console Logging**: All bot activity logged to stdout with timestamps
+- **Discord Webhook Logging**: Bot logs forwarded to DISCORD_WEBHOOK_URL for monitoring command execution and errors
+- **Agent Webhook Logging**: Code changes and agent activity forwarded to DC_AGENT_WEBHOOK_URL with formatted indicators:
+  - `Agent Response >>` - Agent response messages
+  - `User Input >>` - User requests
+  - `Code Edit >>` - Code modifications
+  - `Action >>` - Current tasks being performed
+- **Rationale**: Real-time monitoring of bot health and agent activities for debugging and auditing
 
 # External Dependencies
 

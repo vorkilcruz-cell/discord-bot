@@ -49,6 +49,7 @@ bot = MyBot()
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
+DC_AGENT_WEBHOOK_URL = os.getenv('DC_AGENT_WEBHOOK_URL')
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN required")
 
@@ -81,6 +82,20 @@ def setup_logging():
         logger.addHandler(webhook_handler)
     
     return logger
+
+def send_agent_webhook(indicator: str, content: str):
+    """Send formatted messages to DC_AGENT_WEBHOOK_URL"""
+    if not DC_AGENT_WEBHOOK_URL:
+        return
+    
+    try:
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        message = f"[{timestamp}] **{indicator}**\n{content}"
+        chunks = [message[i:i+1900] for i in range(0, len(message), 1900)]
+        for chunk in chunks:
+            requests.post(DC_AGENT_WEBHOOK_URL, json={"content": chunk}, timeout=5)
+    except Exception as e:
+        logger.debug(f"Failed to send agent webhook: {e}")
 
 logger = setup_logging()
 translator = Translator()
