@@ -1,0 +1,20 @@
+name: fps.ms Daily Renewal
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Runs every day at midnight UTC
+  workflow_dispatch:  # Can also trigger manually from GitHub
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Renew fps.ms bot
+        run: |
+          curl -X GET "${{ secrets.FPS_MS_RENEWAL_URL }}" \
+            -H "User-Agent: Mozilla/5.0" \
+            -w "\nRenewal Status: %{http_code}\n"
+        if: secrets.FPS_MS_RENEWAL_URL != ''
+      
+      - name: Log renewal
+        run: echo "✅ fps.ms bot renewed at $(date)"
