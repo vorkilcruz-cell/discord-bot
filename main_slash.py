@@ -10,6 +10,9 @@ import os
 from datetime import datetime, timedelta
 import json
 import subprocess
+import logging
+import sys
+from io import StringIO
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -23,27 +26,62 @@ class MyBot(commands.Bot):
         
     async def setup_hook(self):
         try:
+            command_count = len(self.tree._get_all_commands())
+            logger.info(f"📡 Registering {command_count} slash commands...")
             await self.tree.sync()
-            print("✅ Slash commands synced!")
+            logger.info(f"✅ {command_count} slash commands synced successfully!")
         except discord.errors.HTTPException as e:
             if e.code == 50240:
-                print("⚠️ Discord cache issue detected, retrying in 5 seconds...")
+                logger.warning("⚠️ Discord cache issue detected, retrying in 5 seconds...")
                 import asyncio
                 await asyncio.sleep(5)
                 try:
+                    command_count = len(self.tree._get_all_commands())
                     await self.tree.sync()
-                    print("✅ Slash commands synced!")
+                    logger.info(f"✅ Retry successful! {command_count} slash commands synced!")
                 except Exception as retry_err:
-                    print(f"⚠️ Sync retry failed but bot will continue: {retry_err}")
+                    logger.error(f"⚠️ Sync retry failed but bot will continue: {retry_err}")
             else:
                 raise
 
 bot = MyBot()
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN required")
 
+class WebhookHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            if DISCORD_WEBHOOK_URL:
+                chunks = [msg[i:i+1900] for i in range(0, len(msg), 1900)]
+                for chunk in chunks:
+                    requests.post(DISCORD_WEBHOOK_URL, json={"content": f"```\n{chunk}\n```"}, timeout=5)
+        except Exception as e:
+            print(f"Webhook logging error: {e}")
+
+def setup_logging():
+    logger = logging.getLogger('discord_bot')
+    logger.setLevel(logging.DEBUG)
+    
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.DEBUG)
+    console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+    
+    if DISCORD_WEBHOOK_URL:
+        webhook_handler = WebhookHandler()
+        webhook_handler.setLevel(logging.INFO)
+        webhook_formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
+        webhook_handler.setFormatter(webhook_formatter)
+        logger.addHandler(webhook_handler)
+    
+    return logger
+
+logger = setup_logging()
 translator = Translator()
 CURSE_WORDS = ['fuck', 'shit', 'damn', 'bitch', 'ass', 'bastard', 'crap', 'hell']
 BEYBLADE_FILE = 'beyblade_data.json'
@@ -168,10 +206,29 @@ def save_loans(data):
     with open('loans.json', 'w') as f:
         json.dump(data, f, indent=2)
 
+def log_command_result(command_name, user, status, details=""):
+    """Log command execution results"""
+    log_msg = f'✅ Command Success: /{command_name} by {user} ({user.id}) | {details}' if status == 'success' else f'❌ Command Failed: /{command_name} by {user} ({user.id}) | {details}'
+    logger.info(log_msg)
+
 @bot.event
 async def on_ready():
-    print(f'✅ {bot.user} is online!')
+    logger.info(f'✅ Bot connected! Logged in as {bot.user}')
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Beyblades spin | /commands"))
+    logger.info(f'📊 Status updated to: Beyblades spin | /commands')
+
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    logger.error(f'❌ Command Error: {interaction.command.name} by {interaction.user} - {error}')
+    if not interaction.response.is_done():
+        await interaction.response.send_message(f"❌ Error: {str(error)}", ephemeral=True)
+
+async def command_callback(interaction: discord.Interaction) -> None:
+    command_name = interaction.command.name
+    user = interaction.user
+    logger.info(f'🔹 Command Invoked: /{command_name} by {user} ({user.id})')
+    
+bot.tree.interaction_check = command_callback
 
 @bot.event
 async def on_message(message):
@@ -520,6 +577,7 @@ async def balance(interaction: discord.Interaction, member: discord.Member = Non
     else:
         embed.add_field(name="📦 Cards", value="No cards yet!", inline=False)
     
+    log_command_result('balance', interaction.user, 'success', f"Checked {member.name}'s balance: {vorkteks:,} VorkTek-Bucks")
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name='daily', description='📅 Collect daily VorkTek-Bucks bonus')
@@ -633,10 +691,12 @@ async def sell_card(interaction: discord.Interaction, card: str):
 @app_commands.describe(user='User to give to', amount='Amount to give')
 async def give_money(interaction: discord.Interaction, user: discord.User, amount: int):
     if amount <= 0:
+        log_command_result('give', interaction.user, 'error', f"Invalid amount: {amount}")
         await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
         return
     
     if user.id == interaction.user.id:
+        log_command_result('give', interaction.user, 'error', f"Attempted self-transfer")
         await interaction.response.send_message("❌ You can't give money to yourself!", ephemeral=True)
         return
     
@@ -648,6 +708,7 @@ async def give_money(interaction: discord.Interaction, user: discord.User, amoun
     receiver_id = str(user.id)
     
     if data[sender_id].get('vorkteks', 0) < amount:
+        log_command_result('give', interaction.user, 'error', f"Insufficient funds: {data[sender_id].get('vorkteks', 0)} < {amount}")
         await interaction.response.send_message(f"❌ You only have {data[sender_id].get('vorkteks', 0):,} VorkTek-Bucks!", ephemeral=True)
         return
     
@@ -655,6 +716,7 @@ async def give_money(interaction: discord.Interaction, user: discord.User, amoun
     data[receiver_id]['vorkteks'] = data[receiver_id].get('vorkteks', 1000) + amount
     save_beyblade_data(data)
     
+    log_command_result('give', interaction.user, 'success', f"Transferred {amount:,} to {user} | New balance: {data[sender_id]['vorkteks']:,}")
     embed = discord.Embed(title="✅ Money Transferred!", description=f"Gave **{amount:,}** VorkTek-Bucks to {user.mention}!\nYour balance: **{data[sender_id]['vorkteks']:,}** 💵", color=discord.Color.green())
     await interaction.response.send_message(embed=embed)
 
