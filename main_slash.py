@@ -22,8 +22,21 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix='/', intents=intents)
         
     async def setup_hook(self):
-        await self.tree.sync()
-        print("✅ Slash commands synced!")
+        try:
+            await self.tree.sync()
+            print("✅ Slash commands synced!")
+        except discord.errors.HTTPException as e:
+            if e.code == 50240:
+                print("⚠️ Discord cache issue detected, retrying in 5 seconds...")
+                import asyncio
+                await asyncio.sleep(5)
+                try:
+                    await self.tree.sync()
+                    print("✅ Slash commands synced!")
+                except Exception as retry_err:
+                    print(f"⚠️ Sync retry failed but bot will continue: {retry_err}")
+            else:
+                raise
 
 bot = MyBot()
 
@@ -143,6 +156,16 @@ def load_confessions():
 
 def save_confessions(data):
     with open(CONFESSIONS_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def load_loans():
+    if os.path.exists('loans.json'):
+        with open('loans.json', 'r') as f:
+            return json.load(f)
+    return {'loans': []}
+
+def save_loans(data):
+    with open('loans.json', 'w') as f:
         json.dump(data, f, indent=2)
 
 @bot.event
@@ -606,6 +629,153 @@ async def sell_card(interaction: discord.Interaction, card: str):
     embed = discord.Embed(title="✅ Card Sold!", description=f"Sold **{card}** {CARDS[card]['emoji']}\nGot: **{sell_price:,}** VorkTek-Bucks\nTotal: **{data[uid]['vorkteks']:,}** VorkTek-Bucks", color=discord.Color.green())
     await interaction.response.send_message(embed=embed)
 
+@bot.tree.command(name='give', description='💸 Give VorkTek-Bucks to another user')
+@app_commands.describe(user='User to give to', amount='Amount to give')
+async def give_money(interaction: discord.Interaction, user: discord.User, amount: int):
+    if amount <= 0:
+        await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
+        return
+    
+    if user.id == interaction.user.id:
+        await interaction.response.send_message("❌ You can't give money to yourself!", ephemeral=True)
+        return
+    
+    data = load_beyblade_data()
+    data = init_user(data, interaction.user.id)
+    data = init_user(data, user.id)
+    
+    sender_id = str(interaction.user.id)
+    receiver_id = str(user.id)
+    
+    if data[sender_id].get('vorkteks', 0) < amount:
+        await interaction.response.send_message(f"❌ You only have {data[sender_id].get('vorkteks', 0):,} VorkTek-Bucks!", ephemeral=True)
+        return
+    
+    data[sender_id]['vorkteks'] -= amount
+    data[receiver_id]['vorkteks'] = data[receiver_id].get('vorkteks', 1000) + amount
+    save_beyblade_data(data)
+    
+    embed = discord.Embed(title="✅ Money Transferred!", description=f"Gave **{amount:,}** VorkTek-Bucks to {user.mention}!\nYour balance: **{data[sender_id]['vorkteks']:,}** 💵", color=discord.Color.green())
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='loan', description='💳 Request a loan from another user (10% interest)')
+@app_commands.describe(user='User to loan from', amount='Amount to borrow')
+async def request_loan(interaction: discord.Interaction, user: discord.User, amount: int):
+    if amount <= 0:
+        await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
+        return
+    
+    if user.id == interaction.user.id:
+        await interaction.response.send_message("❌ You can't loan from yourself!", ephemeral=True)
+        return
+    
+    data = load_beyblade_data()
+    data = init_user(data, interaction.user.id)
+    data = init_user(data, user.id)
+    loans = load_loans()
+    
+    lender_id = str(user.id)
+    borrower_id = str(interaction.user.id)
+    
+    if data[lender_id].get('vorkteks', 0) < amount:
+        await interaction.response.send_message(f"❌ {user.mention} only has {data[lender_id].get('vorkteks', 0):,} VorkTek-Bucks!", ephemeral=True)
+        return
+    
+    repay_amount = int(amount * 1.10)
+    
+    loan = {
+        'id': len(loans['loans']) + 1,
+        'lender': str(user.id),
+        'borrower': borrower_id,
+        'amount': amount,
+        'repay_amount': repay_amount,
+        'status': 'active',
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    data[lender_id]['vorkteks'] -= amount
+    data[borrower_id]['vorkteks'] = data[borrower_id].get('vorkteks', 1000) + amount
+    loans['loans'].append(loan)
+    
+    save_beyblade_data(data)
+    save_loans(loans)
+    
+    embed = discord.Embed(title="✅ Loan Approved!", description=f"**{amount:,}** VorkTek-Bucks borrowed from {user.mention}\nRepay amount (10% interest): **{repay_amount:,}** VorkTek-Bucks\nLoan ID: #{loan['id']}", color=discord.Color.green())
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='repay', description='💳 Repay a loan')
+@app_commands.describe(loan_id='Loan ID to repay')
+async def repay_loan(interaction: discord.Interaction, loan_id: int):
+    loans = load_loans()
+    
+    loan = None
+    for l in loans['loans']:
+        if l['id'] == loan_id:
+            loan = l
+            break
+    
+    if not loan:
+        await interaction.response.send_message("❌ Loan not found!", ephemeral=True)
+        return
+    
+    if loan['status'] != 'active':
+        await interaction.response.send_message("❌ This loan is not active!", ephemeral=True)
+        return
+    
+    if loan['borrower'] != str(interaction.user.id):
+        await interaction.response.send_message("❌ This is not your loan!", ephemeral=True)
+        return
+    
+    data = load_beyblade_data()
+    data = init_user(data, int(loan['lender']))
+    data = init_user(data, int(loan['borrower']))
+    
+    borrower_id = loan['borrower']
+    lender_id = loan['lender']
+    repay_amount = loan['repay_amount']
+    
+    if data[borrower_id].get('vorkteks', 0) < repay_amount:
+        await interaction.response.send_message(f"❌ You need {repay_amount:,} VorkTek-Bucks to repay, but you only have {data[borrower_id].get('vorkteks', 0):,}!", ephemeral=True)
+        return
+    
+    data[borrower_id]['vorkteks'] -= repay_amount
+    data[lender_id]['vorkteks'] = data[lender_id].get('vorkteks', 1000) + repay_amount
+    
+    loan['status'] = 'repaid'
+    
+    save_beyblade_data(data)
+    save_loans(loans)
+    
+    lender = await bot.fetch_user(int(lender_id))
+    embed = discord.Embed(title="✅ Loan Repaid!", description=f"Repaid **{repay_amount:,}** VorkTek-Bucks to {lender.mention}\nYour balance: **{data[borrower_id]['vorkteks']:,}** 💵", color=discord.Color.green())
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='loans', description='💳 View your active loans')
+async def view_loans(interaction: discord.Interaction):
+    loans = load_loans()
+    user_id = str(interaction.user.id)
+    
+    user_loans = [l for l in loans['loans'] if (l['borrower'] == user_id or l['lender'] == user_id) and l['status'] == 'active']
+    
+    if not user_loans:
+        embed = discord.Embed(title="💳 Your Loans", description="You have no active loans!", color=discord.Color.blue())
+        await interaction.response.send_message(embed=embed)
+        return
+    
+    embed = discord.Embed(title="💳 Your Active Loans", color=discord.Color.gold())
+    
+    for loan in user_loans:
+        if loan['borrower'] == user_id:
+            role = "Borrowing"
+            other_user = await bot.fetch_user(int(loan['lender']))
+            embed.add_field(name=f"#{loan['id']} - {role}", value=f"From: {other_user.mention}\nAmount: **{loan['amount']:,}** VorkTek-Bucks\nRepay: **{loan['repay_amount']:,}** VorkTek-Bucks (10% interest)\nUse `/repay {loan['id']}` to repay", inline=False)
+        else:
+            role = "Lending"
+            other_user = await bot.fetch_user(int(loan['borrower']))
+            embed.add_field(name=f"#{loan['id']} - {role}", value=f"To: {other_user.mention}\nAmount: **{loan['amount']:,}** VorkTek-Bucks\nWill receive: **{loan['repay_amount']:,}** VorkTek-Bucks", inline=False)
+    
+    await interaction.response.send_message(embed=embed)
+
 @bot.tree.command(name='admin-give', description='🔧 [ADMIN] Give VorkTek-Bucks')
 @app_commands.describe(user='User to give to', amount='Amount')
 async def admin_give(interaction: discord.Interaction, user: discord.User, amount: int):
@@ -700,6 +870,7 @@ async def commands_list(interaction: discord.Interaction):
     embed = discord.Embed(title="🤖 Command List", color=discord.Color.blue())
     embed.add_field(name="⚔️ BEYBLADE GAME", value="`/spawn` - Spawn Beyblade\n`/catch` - Catch it\n`/collection` - View Beyblades\n`/battle` - Battle players\n`/stats` - View stats\n`/dex` - Pokedex", inline=False)
     embed.add_field(name="💰 VORKTEKS & CARDS", value="`/balance` - Check wallet\n`/daily` - Daily bonus\n`/gamble` - Gamble currency\n`/cards` - View cards\n`/buy` - Buy card\n`/sell` - Sell card", inline=False)
+    embed.add_field(name="💸 MONEY TRANSFER & LOANS", value="`/give` - Give VorkTek-Bucks\n`/loan` - Borrow from someone\n`/repay` - Repay a loan\n`/loans` - View your loans", inline=False)
     embed.add_field(name="🤐 CONFESSIONS", value="`/confess` - Submit confession\n`/confessions` - View all confessions", inline=False)
     embed.add_field(name="🎨 FUN & INFO", value="`/robux` - Fake robux\n`/verse` - Bible verse\n`/funfact` - Fun fact\n`/weather` - Weather\n`/youtube` - VorkilORCAL\n`/translate` - Translate\n`/console` - Logs", inline=False)
     await interaction.response.send_message(embed=embed)
