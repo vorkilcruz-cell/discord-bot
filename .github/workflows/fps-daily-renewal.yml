@@ -2,7 +2,7 @@ name: fps.ms Daily Renewal
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Runs every day at midnight UTC
+    - cron: '0 0,23 * * *'  # Runs every 23 hours (midnight and 11 PM UTC)
   workflow_dispatch:  # Can also trigger manually from GitHub
 
 jobs:
