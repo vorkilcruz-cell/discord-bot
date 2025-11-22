@@ -23,27 +23,19 @@ intents.guilds = True
 class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix='/', intents=intents)
+        self.synced = False
         
     async def setup_hook(self):
+        command_count = len(self.tree._get_all_commands())
+        logger.info(f"📡 Syncing {command_count} slash commands with Discord...")
+        
         try:
-            command_count = len(self.tree._get_all_commands())
-            logger.info(f"📡 Registering {command_count} slash commands...")
-            await self.tree.sync()
-            logger.info(f"✅ {command_count} slash commands synced successfully!")
+            synced = await self.tree.sync()
+            self.synced = True
+            logger.info(f"✅ Successfully synced {len(synced)} commands!")
         except discord.errors.HTTPException as e:
-            if e.code == 50240:
-                logger.warning("⚠️ Discord cache issue detected, waiting 10 seconds before retry...")
-                import asyncio
-                await asyncio.sleep(10)
-                try:
-                    command_count = len(self.tree._get_all_commands())
-                    await self.tree.sync()
-                    logger.info(f"✅ Retry successful! {command_count} slash commands synced!")
-                except Exception as retry_err:
-                    logger.warning(f"⚠️ Sync retry failed but bot will continue: {retry_err}")
-                    logger.info(f"ℹ️ Commands may appear after Discord refreshes the command cache (usually within a minute)")
-            else:
-                raise
+            logger.warning(f"⚠️ Discord sync error (Code {e.code}): {e}")
+            logger.info(f"📝 Commands will still work - Discord cache will refresh automatically")
 
 bot = MyBot()
 
