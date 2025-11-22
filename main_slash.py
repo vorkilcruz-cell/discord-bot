@@ -374,39 +374,48 @@ async def on_message(message):
     
     # Check if this is a message from agent in the dedicated channel
     if message.channel.id == AGENT_CHANNEL_ID and message.author.id == AGENT_USER_ID:
-        user_input = message.content.strip()
+        user_request = message.content.strip()
         
-        # Log user input to DC_AGENT_WEBHOOK_URL (audit trail)
-        input_log = f"""📨 **Message Received:**
+        # Log user REQUEST to DC_AGENT_WEBHOOK_URL (as a task/command)
+        request_log = f"""🎯 **USER REQUEST - AGENT ACTION REQUIRED:**
+
 User: {message.author} (ID: {message.author.id})
-Channel: {message.channel.name} (ID: {message.channel.id})
+Channel: {message.channel.name}
 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Content:
-{user_input}"""
+
+REQUEST:
+{user_request}
+
+---
+This message requires agent action. Execute the request above as if received in main chat.
+Respond with results via AGENT_WEBHOOK_OUTPUT webhook."""
         
-        log_to_agent_webhook("User Input >>", input_log)
+        log_to_agent_webhook("Agent Task Request >>", request_log)
         
         # Send acknowledgment to Discord via bot
         try:
-            await message.add_reaction('✅')
+            await message.add_reaction('⏳')
             embed = discord.Embed(
-                title="🤖 Message Received",
-                description=f"Your message has been logged and agent will respond.",
-                color=discord.Color.blue()
+                title="⏳ Processing Your Request",
+                description=f"Request logged and being executed by agent.",
+                color=discord.Color.gold()
             )
+            embed.add_field(name="Request", value=user_request[:200], inline=False)
+            embed.set_footer(text="Agent will respond shortly...")
             await message.reply(embed=embed, mention_author=False)
         except Exception as e:
             logger.debug(f"Failed to acknowledge message: {e}")
         
-        # Send agent response to AGENT_WEBHOOK_OUTPUT
-        # This allows me to respond directly to your message
-        response_content = f"""🤖 **Agent Response**
-Received your message: "{user_input}"
-Message has been logged and processed.
+        # Send initial processing response to AGENT_WEBHOOK_OUTPUT
+        processing_message = f"""⏳ **Agent Processing Request**
 
-Check DC_AGENT_WEBHOOK_URL for full audit trail."""
+**Your Request:**
+{user_request}
+
+**Status:** Executing...
+Agent is processing your request now."""
         
-        send_agent_response(response_content, username="🤖 Agent")
+        send_agent_response(processing_message, username="⏳ Agent (Processing)")
         
         return  # Don't process further
     
