@@ -24,25 +24,6 @@ class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix='/', intents=intents)
         self.synced = False
-        
-    async def setup_hook(self):
-        command_count = len(self.tree._get_all_commands())
-        logger.info(f"📡 Syncing {command_count} slash commands with Discord...")
-        
-        try:
-            # Try global sync first
-            synced = await self.tree.sync()
-            self.synced = True
-            logger.info(f"✅ Successfully synced {len(synced)} commands globally!")
-        except discord.errors.HTTPException as e:
-            if e.code == 50240:
-                # Entry Point command conflict - this is expected
-                logger.warning(f"⚠️ Discord Entry Point conflict (Error 50240) - syncing to guilds instead...")
-                logger.info(f"📝 Commands will sync to servers when bot connects - autocomplete should appear shortly")
-                self.synced = False  # Will retry in on_ready
-            else:
-                logger.warning(f"⚠️ Discord sync error (Code {e.code}): {e}")
-                logger.info(f"📝 Commands will still work - Discord cache will refresh automatically")
 
 bot = MyBot()
 
@@ -254,23 +235,43 @@ def log_command_result(command_name, user, status, details=""):
 @bot.event
 async def on_ready():
     logger.info(f'✅ Bot connected! Logged in as {bot.user}')
+    logger.info(f"📍 Bot is in {len(bot.guilds)} guild(s)")
     
-    # If global sync failed, try guild-specific sync
+    # Sync commands only once
     if not bot.synced:
+        # Wait a moment to ensure all decorators are loaded
+        await asyncio.sleep(1)
+        
+        command_count = len(bot.tree._get_all_commands())
+        logger.info(f"📡 {command_count} commands loaded in tree")
+        
+        # Try global sync first
+        logger.info("🔄 Attempting global command sync...")
         try:
-            guild_count = 0
-            for guild in bot.guilds:
-                try:
-                    await bot.tree.sync(guild=guild)
-                    guild_count += 1
-                except Exception as e:
-                    logger.debug(f"Failed to sync commands in guild {guild.id}: {e}")
-            
-            if guild_count > 0:
-                logger.info(f"✅ Successfully synced commands to {guild_count} guild(s)!")
-                bot.synced = True
-        except Exception as e:
-            logger.warning(f"Guild sync fallback failed: {e}")
+            synced = await bot.tree.sync()
+            logger.info(f"✅ GLOBAL SYNC SUCCESS: Synced {len(synced)} commands!")
+            bot.synced = True
+        except discord.errors.HTTPException as e:
+            if e.code == 50240:
+                # Entry Point conflict - try guild-by-guild instead
+                logger.warning(f"⚠️ Discord Entry Point conflict (Error 50240) - syncing by guild...")
+                guild_count = 0
+                
+                for guild in bot.guilds:
+                    try:
+                        synced_cmds = await bot.tree.sync(guild=discord.Object(id=guild.id))
+                        logger.info(f"✅ Guild '{guild.name}': Synced {len(synced_cmds)} commands")
+                        guild_count += 1
+                    except Exception as guild_e:
+                        logger.warning(f"❌ Guild '{guild.name}' failed: {guild_e}")
+                
+                if guild_count > 0:
+                    logger.info(f"✅ Guild sync complete: {guild_count}/{len(bot.guilds)} guilds")
+                    bot.synced = True
+                else:
+                    logger.error(f"❌ Both global and guild sync failed")
+            else:
+                logger.warning(f"⚠️ Sync error (Code {e.code}): {e}")
     
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Beyblades spin | /commands"))
     logger.info(f'📊 Status updated to: Beyblades spin | /commands')
