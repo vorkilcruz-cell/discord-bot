@@ -30,12 +30,19 @@ class MyBot(commands.Bot):
         logger.info(f"📡 Syncing {command_count} slash commands with Discord...")
         
         try:
+            # Try global sync first
             synced = await self.tree.sync()
             self.synced = True
-            logger.info(f"✅ Successfully synced {len(synced)} commands!")
+            logger.info(f"✅ Successfully synced {len(synced)} commands globally!")
         except discord.errors.HTTPException as e:
-            logger.warning(f"⚠️ Discord sync error (Code {e.code}): {e}")
-            logger.info(f"📝 Commands will still work - Discord cache will refresh automatically")
+            if e.code == 50240:
+                # Entry Point command conflict - this is expected
+                logger.warning(f"⚠️ Discord Entry Point conflict (Error 50240) - syncing to guilds instead...")
+                logger.info(f"📝 Commands will sync to servers when bot connects - autocomplete should appear shortly")
+                self.synced = False  # Will retry in on_ready
+            else:
+                logger.warning(f"⚠️ Discord sync error (Code {e.code}): {e}")
+                logger.info(f"📝 Commands will still work - Discord cache will refresh automatically")
 
 bot = MyBot()
 
@@ -247,6 +254,24 @@ def log_command_result(command_name, user, status, details=""):
 @bot.event
 async def on_ready():
     logger.info(f'✅ Bot connected! Logged in as {bot.user}')
+    
+    # If global sync failed, try guild-specific sync
+    if not bot.synced:
+        try:
+            guild_count = 0
+            for guild in bot.guilds:
+                try:
+                    await bot.tree.sync(guild=guild)
+                    guild_count += 1
+                except Exception as e:
+                    logger.debug(f"Failed to sync commands in guild {guild.id}: {e}")
+            
+            if guild_count > 0:
+                logger.info(f"✅ Successfully synced commands to {guild_count} guild(s)!")
+                bot.synced = True
+        except Exception as e:
+            logger.warning(f"Guild sync fallback failed: {e}")
+    
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Beyblades spin | /commands"))
     logger.info(f'📊 Status updated to: Beyblades spin | /commands')
     
