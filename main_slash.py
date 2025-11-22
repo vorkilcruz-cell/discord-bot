@@ -34,6 +34,7 @@ if not DISCORD_TOKEN:
 translator = Translator()
 CURSE_WORDS = ['fuck', 'shit', 'damn', 'bitch', 'ass', 'bastard', 'crap', 'hell']
 BEYBLADE_FILE = 'beyblade_data.json'
+CONFESSIONS_FILE = 'confessions.json'
 
 CARDS = {
     'Churro Card': {'emoji': '🌮', 'rarity': 'rare', 'value': 500},
@@ -133,6 +134,16 @@ def init_user(data, user_id):
             'last_daily': None
         }
     return data
+
+def load_confessions():
+    if os.path.exists(CONFESSIONS_FILE):
+        with open(CONFESSIONS_FILE, 'r') as f:
+            return json.load(f)
+    return {'confessions': []}
+
+def save_confessions(data):
+    with open(CONFESSIONS_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
 
 @bot.event
 async def on_ready():
@@ -633,11 +644,63 @@ async def admin_card(interaction: discord.Interaction, user: discord.User, card:
     
     await interaction.response.send_message(f"✅ Gave **{card}** {CARDS[card]['emoji']} to {user.mention}!")
 
+@bot.tree.command(name='confess', description='🤐 Submit an anonymous confession')
+@app_commands.describe(message='Your confession', penname='Optional pen name (leave blank for anonymous)')
+async def confess(interaction: discord.Interaction, message: str, penname: str = None):
+    confessions = load_confessions()
+    
+    confession = {
+        'id': len(confessions['confessions']) + 1,
+        'message': message,
+        'penname': penname or 'Anonymous',
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    confessions['confessions'].append(confession)
+    save_confessions(confessions)
+    
+    embed = discord.Embed(title="✅ Confession Submitted!", description="Your confession has been posted anonymously.", color=discord.Color.green())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name='confessions', description='📖 View all confessions')
+async def view_confessions(interaction: discord.Interaction):
+    confessions = load_confessions()
+    
+    if not confessions['confessions']:
+        embed = discord.Embed(title="📖 Confessions", description="No confessions yet. Be the first to confess!", color=discord.Color.blue())
+        await interaction.response.send_message(embed=embed)
+        return
+    
+    embed = discord.Embed(title="📖 All Confessions", color=discord.Color.purple())
+    
+    for conf in confessions['confessions'][-10:]:
+        time_str = datetime.fromisoformat(conf['timestamp']).strftime('%m/%d %H:%M')
+        embed.add_field(
+            name=f"#{conf['id']} - {conf['penname']}",
+            value=f"{conf['message']}\n*{time_str}*",
+            inline=False
+        )
+    
+    embed.set_footer(text=f"Showing latest 10 of {len(confessions['confessions'])} confessions")
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='clear-confessions', description='🔧 [ADMIN] Delete all confessions')
+async def clear_confessions(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator and interaction.user != interaction.guild.owner:
+        await interaction.response.send_message("❌ Admin or server owner only!", ephemeral=True)
+        return
+    
+    confessions = {'confessions': []}
+    save_confessions(confessions)
+    
+    await interaction.response.send_message("✅ All confessions have been cleared!")
+
 @bot.tree.command(name='commands', description='📖 All commands')
 async def commands_list(interaction: discord.Interaction):
     embed = discord.Embed(title="🤖 Command List", color=discord.Color.blue())
     embed.add_field(name="⚔️ BEYBLADE GAME", value="`/spawn` - Spawn Beyblade\n`/catch` - Catch it\n`/collection` - View Beyblades\n`/battle` - Battle players\n`/stats` - View stats\n`/dex` - Pokedex", inline=False)
     embed.add_field(name="💰 VORKTEKS & CARDS", value="`/balance` - Check wallet\n`/daily` - Daily bonus\n`/gamble` - Gamble currency\n`/cards` - View cards\n`/buy` - Buy card\n`/sell` - Sell card", inline=False)
+    embed.add_field(name="🤐 CONFESSIONS", value="`/confess` - Submit confession\n`/confessions` - View all confessions", inline=False)
     embed.add_field(name="🎨 FUN & INFO", value="`/robux` - Fake robux\n`/verse` - Bible verse\n`/funfact` - Fun fact\n`/weather` - Weather\n`/youtube` - VorkilORCAL\n`/translate` - Translate\n`/console` - Logs", inline=False)
     await interaction.response.send_message(embed=embed)
 
