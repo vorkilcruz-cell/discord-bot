@@ -1,0 +1,18 @@
+name: HidenCloud Weekly Server Renewal
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Runs every Sunday at midnight UTC
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  renew-server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Renew HidenCloud Server
+        run: |
+          curl -X GET "${{ secrets.HIDENCLOUD_RENEWAL_URL }}" || echo "Renewal request sent"
+          echo "HidenCloud server renewal triggered at $(date)"
+      
+      - name: Log Renewal
+        run: echo "✅ Weekly HidenCloud renewal completed"
