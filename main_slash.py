@@ -32,15 +32,16 @@ class MyBot(commands.Bot):
             logger.info(f"✅ {command_count} slash commands synced successfully!")
         except discord.errors.HTTPException as e:
             if e.code == 50240:
-                logger.warning("⚠️ Discord cache issue detected, retrying in 5 seconds...")
+                logger.warning("⚠️ Discord cache issue detected, waiting 10 seconds before retry...")
                 import asyncio
-                await asyncio.sleep(5)
+                await asyncio.sleep(10)
                 try:
                     command_count = len(self.tree._get_all_commands())
                     await self.tree.sync()
                     logger.info(f"✅ Retry successful! {command_count} slash commands synced!")
                 except Exception as retry_err:
-                    logger.error(f"⚠️ Sync retry failed but bot will continue: {retry_err}")
+                    logger.warning(f"⚠️ Sync retry failed but bot will continue: {retry_err}")
+                    logger.info(f"ℹ️ Commands may appear after Discord refreshes the command cache (usually within a minute)")
             else:
                 raise
 
@@ -308,7 +309,8 @@ async def play(interaction: discord.Interaction, url: str):
 
 @bot.tree.command(name='meet_again', description='🎵 Play "Meet Again" video in VC')
 async def meet_again(interaction: discord.Interaction):
-    if not interaction.user.voice:
+    user_voice = interaction.user.voice if hasattr(interaction.user, 'voice') else None
+    if not user_voice:
         embed = discord.Embed(
             title="❌ Not in Voice Channel",
             description="You need to be in a voice channel to use this command!",
