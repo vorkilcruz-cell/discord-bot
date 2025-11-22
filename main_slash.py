@@ -206,6 +206,16 @@ def save_loans(data):
     with open('loans.json', 'w') as f:
         json.dump(data, f, indent=2)
 
+def load_channel_config():
+    if os.path.exists('channel_config.json'):
+        with open('channel_config.json', 'r') as f:
+            return json.load(f)
+    return {'alert_channel_id': None}
+
+def save_channel_config(data):
+    with open('channel_config.json', 'w') as f:
+        json.dump(data, f, indent=2)
+
 def log_command_result(command_name, user, status, details=""):
     """Log command execution results"""
     log_msg = f'✅ Command Success: /{command_name} by {user} ({user.id}) | {details}' if status == 'success' else f'❌ Command Failed: /{command_name} by {user} ({user.id}) | {details}'
@@ -216,6 +226,44 @@ async def on_ready():
     logger.info(f'✅ Bot connected! Logged in as {bot.user}')
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Beyblades spin | /commands"))
     logger.info(f'📊 Status updated to: Beyblades spin | /commands')
+    
+    config = load_channel_config()
+    if config.get('alert_channel_id'):
+        try:
+            channel = bot.get_channel(config['alert_channel_id'])
+            if channel:
+                embed = discord.Embed(
+                    title="🟢 BOT ONLINE",
+                    description=f"**{bot.user}** is now online and ready!",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="Status", value="✅ Bot is running", inline=False)
+                embed.add_field(name="Commands Available", value="Use `/commands` to see all commands", inline=False)
+                embed.timestamp = discord.utils.utcnow()
+                await channel.send(f"@everyone", embed=embed)
+                logger.info(f'📢 Online alert sent to channel {config["alert_channel_id"]}')
+        except Exception as e:
+            logger.error(f'Failed to send online alert: {e}')
+
+@bot.event
+async def on_disconnect():
+    logger.warning(f'⚠️ Bot disconnected!')
+    config = load_channel_config()
+    if config.get('alert_channel_id'):
+        try:
+            channel = bot.get_channel(config['alert_channel_id'])
+            if channel:
+                embed = discord.Embed(
+                    title="🔴 BOT OFFLINE",
+                    description=f"**{bot.user}** has gone offline.",
+                    color=discord.Color.red()
+                )
+                embed.add_field(name="Status", value="❌ Bot is offline", inline=False)
+                embed.timestamp = discord.utils.utcnow()
+                await channel.send(f"@everyone", embed=embed)
+                logger.info(f'📢 Offline alert sent to channel {config["alert_channel_id"]}')
+        except Exception as e:
+            logger.error(f'Failed to send offline alert: {e}')
 
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -928,6 +976,36 @@ async def clear_confessions(interaction: discord.Interaction):
     
     await interaction.response.send_message("✅ All confessions have been cleared!")
 
+@bot.tree.command(name='channel_set', description='🔧 [ADMIN] Set alert channel for online/offline notifications')
+@app_commands.describe(channel_id='Channel ID for bot alerts')
+async def channel_set(interaction: discord.Interaction, channel_id: int):
+    if not interaction.user.guild_permissions.administrator and interaction.user != interaction.guild.owner:
+        await interaction.response.send_message("❌ Admin or server owner only!", ephemeral=True)
+        return
+    
+    try:
+        channel = bot.get_channel(channel_id)
+        if not channel:
+            await interaction.response.send_message(f"❌ Channel with ID {channel_id} not found in this server!", ephemeral=True)
+            return
+        
+        config = load_channel_config()
+        config['alert_channel_id'] = channel_id
+        save_channel_config(config)
+        
+        log_command_result('channel_set', interaction.user, 'success', f"Set alert channel to {channel.mention}")
+        embed = discord.Embed(
+            title="✅ Alert Channel Set!",
+            description=f"Bot online/offline alerts will be sent to {channel.mention}",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Channel ID", value=f"`{channel_id}`", inline=False)
+        embed.add_field(name="What happens", value="When bot goes online: Gets alert with @everyone\nWhen bot goes offline: Gets alert with @everyone", inline=False)
+        await interaction.response.send_message(embed=embed)
+    except Exception as e:
+        log_command_result('channel_set', interaction.user, 'error', f"Failed: {str(e)}")
+        await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
+
 @bot.tree.command(name='commands', description='📖 All commands')
 async def commands_list(interaction: discord.Interaction):
     embed = discord.Embed(title="🤖 Command List", color=discord.Color.blue())
@@ -935,6 +1013,7 @@ async def commands_list(interaction: discord.Interaction):
     embed.add_field(name="💰 VORKTEKS & CARDS", value="`/balance` - Check wallet\n`/daily` - Daily bonus\n`/gamble` - Gamble currency\n`/cards` - View cards\n`/buy` - Buy card\n`/sell` - Sell card", inline=False)
     embed.add_field(name="💸 MONEY TRANSFER & LOANS", value="`/give` - Give VorkTek-Bucks\n`/loan` - Borrow from someone\n`/repay` - Repay a loan\n`/loans` - View your loans", inline=False)
     embed.add_field(name="🤐 CONFESSIONS", value="`/confess` - Submit confession\n`/confessions` - View all confessions", inline=False)
+    embed.add_field(name="🔧 ADMIN", value="`/channel_set` - Set alert channel\n`/admin-give` - Give VorkTek-Bucks\n`/admin-card` - Give card\n`/clear-confessions` - Clear all confessions", inline=False)
     embed.add_field(name="🎨 FUN & INFO", value="`/robux` - Fake robux\n`/verse` - Bible verse\n`/funfact` - Fun fact\n`/weather` - Weather\n`/youtube` - VorkilORCAL\n`/translate` - Translate\n`/console` - Logs", inline=False)
     await interaction.response.send_message(embed=embed)
 
