@@ -196,7 +196,9 @@ def init_user(data, user_id):
             'losses': 0,
             'vorkteks': 1000,
             'cards': {},
-            'last_daily': None
+            'last_daily': None,
+            'daily_streak': 0,
+            'last_weekly_bonus': None
         }
     return data
 
@@ -793,25 +795,50 @@ async def balance(interaction: discord.Interaction, member: discord.Member = Non
     log_command_result('balance', interaction.user, 'success', f"Checked {member.name}'s balance: {vorkteks:,} VorkTek-Bucks")
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name='daily', description='📅 Collect daily VorkTek-Bucks bonus')
+@bot.tree.command(name='daily', description='📅 Collect daily VorkTek-Bucks bonus & streak tracking')
 async def daily_bonus(interaction: discord.Interaction):
     data = load_beyblade_data()
     data = init_user(data, interaction.user.id)
     uid = str(interaction.user.id)
     
     today = datetime.now().strftime('%Y-%m-%d')
+    yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     last_daily = data[uid].get('last_daily')
     
     if last_daily == today:
         await interaction.response.send_message("❌ You already claimed your daily bonus today! Come back tomorrow.", ephemeral=True)
         return
     
+    # Update streak
+    if last_daily == yesterday:
+        data[uid]['daily_streak'] = data[uid].get('daily_streak', 0) + 1
+    else:
+        data[uid]['daily_streak'] = 1
+    
+    streak = data[uid]['daily_streak']
     bonus = 500
-    data[uid]['vorkteks'] = data[uid].get('vorkteks', 1000) + bonus
+    
+    # Weekly bonus: +2500 for 7-day streak
+    weekly_bonus = 0
+    if streak == 7:
+        weekly_bonus = 2500
+        data[uid]['last_weekly_bonus'] = today
+        data[uid]['daily_streak'] = 0  # Reset streak after weekly bonus
+    
+    total_bonus = bonus + weekly_bonus
+    data[uid]['vorkteks'] = data[uid].get('vorkteks', 1000) + total_bonus
     data[uid]['last_daily'] = today
     save_beyblade_data(data)
     
-    embed = discord.Embed(title="📅 Daily Bonus Claimed!", description=f"You got **{bonus}** VorkTek-Bucks!", color=discord.Color.green())
+    embed = discord.Embed(title="📅 Daily Bonus Claimed!", color=discord.Color.green())
+    embed.add_field(name="Daily Bonus", value=f"+{bonus:,} VorkTek-Bucks", inline=True)
+    
+    if weekly_bonus > 0:
+        embed.add_field(name="🔥 Weekly Bonus!", value=f"+{weekly_bonus:,} VorkTek-Bucks (7-day streak!)", inline=True)
+        embed.set_footer(text="Streak reset! Keep going!")
+    else:
+        embed.add_field(name="Streak", value=f"**{streak}/7** days", inline=True)
+    
     embed.add_field(name="Total", value=f"**{data[uid]['vorkteks']:,}** 💵", inline=False)
     await interaction.response.send_message(embed=embed)
 
