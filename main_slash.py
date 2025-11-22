@@ -331,30 +331,40 @@ async def command_callback(interaction: discord.Interaction) -> bool:
     
 bot.tree.interaction_check = command_callback
 
-def send_to_webhooks(indicator: str, content: str):
-    """Send message to both DC_AGENT_WEBHOOK_URL and AGENT_WEBHOOK_OUTPUT"""
-    if not DC_AGENT_WEBHOOK_URL and not AGENT_WEBHOOK_OUTPUT:
+def log_to_agent_webhook(indicator: str, content: str):
+    """Log to DC_AGENT_WEBHOOK_URL only (audit trail/logging)"""
+    if not DC_AGENT_WEBHOOK_URL:
         return False
     
     timestamp = datetime.now().strftime('%H:%M:%S')
     message = f"[{timestamp}] **{indicator}**\n{content}"
     
     try:
-        # Send to DC_AGENT_WEBHOOK_URL
-        if DC_AGENT_WEBHOOK_URL:
-            chunks = [message[i:i+1900] for i in range(0, len(message), 1900)]
-            for chunk in chunks:
-                requests.post(DC_AGENT_WEBHOOK_URL, json={"content": chunk}, timeout=5)
-        
-        # Send to AGENT_WEBHOOK_OUTPUT
-        if AGENT_WEBHOOK_OUTPUT:
-            chunks = [message[i:i+1900] for i in range(0, len(message), 1900)]
-            for chunk in chunks:
-                requests.post(AGENT_WEBHOOK_OUTPUT, json={"content": chunk}, timeout=5)
-        
+        chunks = [message[i:i+1900] for i in range(0, len(message), 1900)]
+        for chunk in chunks:
+            requests.post(DC_AGENT_WEBHOOK_URL, json={"content": chunk}, timeout=5)
         return True
     except Exception as e:
-        logger.debug(f"Webhook send error: {e}")
+        logger.debug(f"Agent webhook error: {e}")
+        return False
+
+def send_agent_response(content: str, username: str = "Agent", avatar_url: str = None):
+    """Send response directly to Discord via AGENT_WEBHOOK_OUTPUT webhook"""
+    if not AGENT_WEBHOOK_OUTPUT:
+        return False
+    
+    try:
+        payload = {
+            "content": content,
+            "username": username,
+        }
+        if avatar_url:
+            payload["avatar_url"] = avatar_url
+        
+        response = requests.post(AGENT_WEBHOOK_OUTPUT, json=payload, timeout=5)
+        return response.status_code in [200, 204]
+    except Exception as e:
+        logger.debug(f"Agent response webhook error: {e}")
         return False
 
 @bot.event
@@ -366,7 +376,7 @@ async def on_message(message):
     if message.channel.id == AGENT_CHANNEL_ID and message.author.id == AGENT_USER_ID:
         user_input = message.content.strip()
         
-        # Log user input to both webhooks
+        # Log user input to DC_AGENT_WEBHOOK_URL (audit trail)
         input_log = f"""📨 **Message Received:**
 User: {message.author} (ID: {message.author.id})
 Channel: {message.channel.name} (ID: {message.channel.id})
@@ -374,20 +384,29 @@ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 Content:
 {user_input}"""
         
-        send_to_webhooks("User Input >>", input_log)
+        log_to_agent_webhook("User Input >>", input_log)
         
-        # Send acknowledgment to Discord
+        # Send acknowledgment to Discord via bot
         try:
             await message.add_reaction('✅')
             embed = discord.Embed(
                 title="🤖 Message Received",
-                description=f"Your message has been received and logged.\n\n**Message:** {user_input[:200]}",
+                description=f"Your message has been logged and agent will respond.",
                 color=discord.Color.blue()
             )
-            embed.set_footer(text="Check agent webhooks for response")
             await message.reply(embed=embed, mention_author=False)
         except Exception as e:
             logger.debug(f"Failed to acknowledge message: {e}")
+        
+        # Send agent response to AGENT_WEBHOOK_OUTPUT
+        # This allows me to respond directly to your message
+        response_content = f"""🤖 **Agent Response**
+Received your message: "{user_input}"
+Message has been logged and processed.
+
+Check DC_AGENT_WEBHOOK_URL for full audit trail."""
+        
+        send_agent_response(response_content, username="🤖 Agent")
         
         return  # Don't process further
     
