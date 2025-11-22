@@ -223,10 +223,11 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
     if not interaction.response.is_done():
         await interaction.response.send_message(f"❌ Error: {str(error)}", ephemeral=True)
 
-async def command_callback(interaction: discord.Interaction) -> None:
+async def command_callback(interaction: discord.Interaction) -> bool:
     command_name = interaction.command.name
     user = interaction.user
     logger.info(f'🔹 Command Invoked: /{command_name} by {user} ({user.id})')
+    return True
     
 bot.tree.interaction_check = command_callback
 
