@@ -5,7 +5,7 @@ integrations = ["discord:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["libsodium", "ffmpeg", "zip"]
+packages = ["libsodium", "ffmpeg", "zip", "openssh"]
 
 [workflows]
 runButton = "Project"
